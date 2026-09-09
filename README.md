@@ -45,9 +45,11 @@ packages/
   feed            IFeedProvider, MockFeedProvider + scenario generators,
                    real HeliusFeedProvider (pump.fun, opt-in), tx decoder,
                    FeedManager
-  wallet-intel    watchlist loader, walletStatsUpdater, walletScoring.ts
-  token-intel     token stats/metadata collector (mock or real
-                   DexScreener adapter, opt-in), tokenRiskScoring.ts
+  wallet-intel    watchlist loader + state machine (WatchlistIndex),
+                   walletStatsUpdater, walletScoring.ts
+  token-intel     token stats/metadata collector (mock, or real DexScreener
+                   /Solscan adapters, opt-in), tokenRiskScoring.ts,
+                   CreatorRegistryUpdater
   cluster-detect  wallet relationship graph, union-find clustering, flags
   signal-engine   composite signal score, entryGate.ts
   paper-trading   fill simulator, paper trade engine
@@ -55,7 +57,10 @@ packages/
                    execution pipeline
   position-mgmt   TP ladder / trailing stop / max-hold state machine
   whale-exit      post-entry whale monitoring, tiered response
-  telegram-bot    grammy bot: notifications + control commands
+  whale-discovery WhaleDiscoveryEngine - auto-promotes/pends
+                   never-before-seen wallets onto the watchlist (opt-in)
+  telegram-bot    grammy bot: notifications + control commands, plus
+                   /candidates /approve /reject for whale-discovery
   monitoring      in-memory metrics, alerting, /health + /metrics
   orchestrator    the single canonical pipeline wiring, shared by the live
                    app and the backtest replay engine
@@ -108,7 +113,10 @@ per-stage latencies that `monitoring` aggregates.
   (prior 3/6) scaled by a trade-count confidence factor, so a wallet with 8
   trades at 75% doesn't outscore one with 200 trades at 64%.
 - **Token Risk Score** (0-100, higher = riskier): weighted age /
-  liquidity / concentration / authority / buyer-diversity / flow risk.
+  liquidity / concentration / authority / buyer-diversity / flow / creator
+  risk. `creatorRisk` ships at weight 0 (see "Creator reputation" below) -
+  computed and visible on every score, contributing nothing until an
+  operator deliberately rebalances the weights.
 - **Cluster/manipulation**: a weighted-edge wallet relationship graph
   (common funder, direct transfer, repeated co-buy, timing correlation,
   shared creator) merged via union-find, producing five manipulation flags
@@ -139,9 +147,9 @@ into an already-mature pump.
 
 ## Real integrations
 
-Both of these are fully implemented, not stubs, and both are off by
-default - nothing about the mock-feed/mock-token-stats path above changes
-unless you explicitly opt in.
+All three of these are fully implemented, not stubs, and all three are off
+by default - nothing about the mock-feed/mock-token-stats path above
+changes unless you explicitly opt in.
 
 **DexScreener token data** (`TOKEN_DATA_PROVIDER=dexscreener` in `.env`) -
 `DexScreenerTokenMetadataProvider` (`packages/token-intel`) calls
@@ -150,8 +158,29 @@ market cap, short-TTL cached per mint so the hot trade path never blocks
 on network I/O. DexScreener has no holder count, concentration, or
 mint/freeze authority data, so those fields fall back to conservative
 "treat as risky" defaults (authorities read as *not revoked*) rather than
-a guess - see the comment on `conservativeUnknownSeed` in that file. No
-env var is required beyond the flag itself; DexScreener needs no key.
+a guess - see the comment on `conservativeUnknownSeed` in
+`tokenMetadataProvider.ts` (shared by DexScreener's and Solscan's adapters,
+so the fallback never drifts between them). No env var is required beyond
+the flag itself; DexScreener needs no key.
+
+**Solscan token data** (`TOKEN_DATA_PROVIDER=solscan` in `.env`, plus
+`SOLSCAN_API_KEY`) - `SolscanTokenMetadataProvider` (`packages/token-intel`)
+calls Solscan's paid Pro API v2.0 (`token/meta`, `token/holders`, and an
+account-activity lookup) and, unlike DexScreener, can supply holder count,
+top-10 concentration, and mint/freeze authority state directly, plus two
+fields DexScreener has no concept of at all: `creatorAddress` (who deployed
+the token) and `creatorTokenLaunchCount` (a serial-deployer signal). If
+`TOKEN_DATA_PROVIDER=solscan` is set and `SOLSCAN_API_KEY` is empty, the app
+refuses to start (`wiring.ts`'s `buildTokenMetadataProvider()`), mirroring
+Helius's fail-fast contract below. **Honesty note**: this build has no live
+Solscan key to test against, so the exact endpoint paths and response field
+names in `solscanTokenMetadataProvider.ts` are best-effort, written against
+Solscan's documented v2.0 shape - see the HONESTY NOTE at the top of that
+file before relying on it in production. Unlike the other four metadata
+fields, an unknown `creatorTokenLaunchCount` (Solscan outage, or a provider
+that doesn't support it) deliberately defaults to *neutral* (0 risk
+contribution), not risky - a brand-new first-time creator is normal, and
+missing data shouldn't punish every token equally.
 
 **Helius live feed** (`FEED_PROVIDER=helius` in `.env`, plus
 `HELIUS_API_KEY`) - `HeliusFeedProvider` (`packages/feed`) subscribes to
@@ -166,6 +195,82 @@ Get a key at https://helius.dev. See `HeliusFeedProvider.ts` and
 makes without a live key to verify against (which subscription approach
 was used and why, the trade-event byte layout, and the lack of a live
 SOL/USD price oracle).
+
+## Creator reputation
+
+Two existing gaps turned out to correlate rather than needing two separate
+bolt-ons: token risk scoring couldn't see who deployed a token, and the
+bot's own rug detection never fed back into anything. Concretely, the loop
+is:
+
+1. `SolscanTokenMetadataProvider` puts a real `creatorAddress` +
+   `creatorTokenLaunchCount` onto `TokenStats`, when it can resolve one.
+2. The existing, **unmodified** rug detector - `TokenStatsCollector`'s
+   liquidity-crash logic flagging `RuggedTokenRegistry` - keeps working
+   exactly as it always has. A new `CreatorRegistryUpdater`
+   (`packages/token-intel`) just listens to the already-emitted
+   `token.stats-updated` event and, when a token it knows the creator of
+   gets flagged rugged, increments that creator's `tokensRugged` count in a
+   new persistent `CreatorRegistry` (`packages/core`).
+3. `creatorRiskComponent()` in `tokenRiskScoring.ts` blends that
+   self-learned rug rate (confidence-shrunk the same way `walletScoring.ts`
+   shrinks small-sample wallet data) with Solscan's serial-deployer
+   launch-count signal into `TokenRiskScore.creatorRisk` - computed and
+   visible from day one, but contributing nothing to the score while
+   `tokenRiskWeights.creatorRisk` stays at its shipped default of `0`.
+   Recommended rebalanced split when turning it on: `age .20, liquidity
+   .18, concentration .18, authority .12, buyerDiversity .08, flow .08,
+   creatorRisk .16` (sums to 1.00).
+4. `TokenRiskScore` already gates every entry (`signal-engine/entryGate.ts`)
+   for every whale buy that reaches it, watchlisted or auto-discovered
+   alike, since it's the same function call either way.
+5. Which tokens whales win or get rugged on already feeds
+   `WalletStats.rugExposureCount` (unchanged) -> `rugAvoidanceScore()` ->
+   10% of Whale Score - so creator reputation, wallet reputation, and token
+   risk all stay connected through data the bot already collects.
+
+`CreatorRegistry` is hydrated from `repos.creatorReputation` at boot
+(`wiring.ts`) so reputation survives restarts.
+
+## Whale auto-discovery
+
+Whale-finding was 100% manual: `SniperOrchestrator` only ever scored/traded
+wallets already in the static `config/watchlist.json`. `WhaleDiscoveryEngine`
+(`packages/whale-discovery`) closes that gap - off by default
+(`config/strategy.json`'s `walletDiscovery.enabled: false`).
+
+The watchlist is now a small state machine (`WatchlistEntry.status`:
+`"pending" | "active" | "rejected"`, `.source`: `"manual" |
+"auto-discovered"`) - existing entries default to `{status: "active",
+source: "manual"}` via `normalizeWatchlistEntry()`, so `config/watchlist.json`
+and every existing test/fixture behave exactly as before. Only `"active"`
+entries are tradeable (`WatchlistIndex.isWatched()`).
+
+When enabled, `WhaleDiscoveryEngine` watches every wallet's trade activity
+(not just watchlisted ones) for a never-before-seen wallet. It reuses
+`scoreWallet()`/`evaluateHardGate()` from `walletScoring.ts`
+**byte-for-byte unchanged** - a wallet only gets auto-promoted if it clears
+the identical bar a manually curated wallet has to clear, no second, laxer
+rulebook. A candidate that clears the gate is then checked against
+`ClusterDetector`'s manipulation flags for the triggering token; a wallet in
+a cluster flagged `creatorAssociatedWallets` or `coordinatedBuying` is
+auto-rejected regardless of score. A candidate that clears both checks goes
+to:
+
+- `"active"` immediately (and a `wallet.discovery-promoted` event fires) if
+  `walletDiscovery.autoPromote: true`, or
+- `"pending"` (and a `wallet.discovery-candidate` event fires) otherwise,
+  awaiting operator review.
+
+Telegram (only relevant when `TELEGRAM_BOT_TOKEN` is set - see "Telegram"
+below) gets three new commands: `/candidates` lists everything pending,
+`/approve <address>` and `/reject <address>` move a candidate to
+`"active"`/`"rejected"`, updating both the persisted watchlist and the live
+in-process index immediately.
+
+To try it: set `walletDiscovery.enabled: true` (and optionally
+`autoPromote: true`) in `config/strategy.json` and run `npm run start` - do
+not commit that change, the shipped default is off.
 
 ## Live trading
 
@@ -191,5 +296,8 @@ implementation - then set `LIVE_TRADING_ENABLED=true`,
 
 `telegram-bot` only starts if `TELEGRAM_BOT_TOKEN` is set; otherwise it's a
 no-op and everything else keeps working. Commands (`/status /positions /pnl
-/signals /pause /resume /kill`) only read repositories and flip runtime
-flags - they never call execution or position management directly.
+/signals /pause /resume /kill /candidates /approve /reject`) only read
+repositories and flip runtime flags (or, for `/approve` and `/reject`,
+update watchlist status) - they never call execution or position management
+directly. `/candidates`, `/approve`, and `/reject` are whale-discovery's
+review workflow - see "Whale auto-discovery" above.
