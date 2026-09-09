@@ -22,11 +22,7 @@ export interface ScenarioResult {
 let slotCounter = 1_000_000;
 let txCounter = 0;
 
-function mkEvent(
-  payload: DecodableTradePayload,
-  blockTime: number,
-  receivedAtOffsetMs: number,
-): RawFeedEvent {
+function mkEvent(payload: DecodableTradePayload, blockTime: number): RawFeedEvent {
   slotCounter += 1;
   txCounter += 1;
   return {
@@ -35,7 +31,10 @@ function mkEvent(
     slot: slotCounter,
     blockTime,
     raw: payload,
-    receivedAt: blockTime * 1000 + receivedAtOffsetMs,
+    // Wall-clock, not derived from the scenario's synthetic blockTime: this
+    // field means "when our process observed it" and feeds the detection
+    // latency metric, which reads as years if anchored to a fixture epoch.
+    receivedAt: Date.now(),
   };
 }
 
@@ -53,7 +52,6 @@ function trade(
   return mkEvent(
     { wallet, tokenMint, side, tokenAmount, usdValue, priceUsd, dex, pool },
     blockTime,
-    0,
   );
 }
 
