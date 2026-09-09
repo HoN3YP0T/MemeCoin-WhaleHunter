@@ -1,0 +1,119 @@
+import type {
+  Clock,
+  EventBus,
+  NormalizedTradeEvent,
+  RuggedTokenRegistry,
+  TokenFirstSeenIndex,
+  TokenStats,
+} from "@whale-sniper/core";
+import type { ITokenRepository } from "@whale-sniper/db";
+import type { MockTokenMetadataProvider } from "./mockTokenMetadataProvider.js";
+
+interface WindowedTrade {
+  blockTime: number;
+  side: "BUY" | "SELL";
+  usdValue: number;
+  wallet: string;
+}
+
+interface TokenAccumulator {
+  tokenMint: string;
+  trades: WindowedTrade[]; // pruned to the last hour on every update
+  peakLiquidityUsd: number;
+}
+
+const ONE_HOUR = 3600;
+const FIVE_MIN = 300;
+// A liquidity crash of this magnitude relative to the peak observed flags
+// the token as rugged for wallet-intel's rug-exposure counting.
+const RUG_LIQUIDITY_DROP_RATIO = 0.5;
+
+function newAccumulator(tokenMint: string): TokenAccumulator {
+  return { tokenMint, trades: [], peakLiquidityUsd: 0 };
+}
+
+/**
+ * Derives rolling buy/sell volume and unique-buyer/seller counts directly
+ * from the trade stream (no external dependency needed for those), and
+ * combines them with mocked external metadata (liquidity, holders,
+ * authorities) that the stream alone can't provide.
+ */
+export class TokenStatsCollector {
+  private accumulators = new Map<string, TokenAccumulator>();
+
+  constructor(
+    private readonly bus: EventBus,
+    private readonly repo: ITokenRepository,
+    private readonly metadata: MockTokenMetadataProvider,
+    private readonly tokenFirstSeen: TokenFirstSeenIndex,
+    private readonly ruggedRegistry: RuggedTokenRegistry,
+    private readonly clock: Clock,
+  ) {}
+
+  start(): () => void {
+    return this.bus.on("trade.normalized", (event) => {
+      void this.handle(event);
+    });
+  }
+
+  getStats(tokenMint: string): TokenStats | undefined {
+    const acc = this.accumulators.get(tokenMint);
+    if (!acc) return undefined;
+    return this.buildStats(acc, this.clock.now() / 1000);
+  }
+
+  private async handle(event: NormalizedTradeEvent): Promise<void> {
+    let acc = this.accumulators.get(event.tokenMint);
+    if (!acc) {
+      acc = newAccumulator(event.tokenMint);
+      this.accumulators.set(event.tokenMint, acc);
+    }
+
+    acc.trades.push({ blockTime: event.blockTime, side: event.side, usdValue: event.usdValue, wallet: event.wallet });
+    acc.trades = acc.trades.filter((t) => t.blockTime >= event.blockTime - ONE_HOUR);
+
+    const meta = this.metadata.get(event.tokenMint);
+    acc.peakLiquidityUsd = Math.max(acc.peakLiquidityUsd, meta.liquidityUsd);
+    if (acc.peakLiquidityUsd > 0 && meta.liquidityUsd / acc.peakLiquidityUsd < RUG_LIQUIDITY_DROP_RATIO) {
+      this.ruggedRegistry.flag(event.tokenMint);
+    }
+
+    const stats = this.buildStats(acc, event.blockTime);
+    await this.repo.upsertStats(stats);
+    this.bus.emit("token.stats-updated", { tokenMint: event.tokenMint });
+  }
+
+  private buildStats(acc: TokenAccumulator, asOfBlockTime: number): TokenStats {
+    const meta = this.metadata.get(acc.tokenMint);
+    const firstSeen = this.tokenFirstSeen.get(acc.tokenMint) ?? asOfBlockTime;
+
+    const within = (seconds: number) => acc.trades.filter((t) => t.blockTime >= asOfBlockTime - seconds);
+    const last1h = within(ONE_HOUR);
+    const last5m = within(FIVE_MIN);
+
+    const uniqueBuyers1h = new Set(last1h.filter((t) => t.side === "BUY").map((t) => t.wallet)).size;
+    const uniqueSellers1h = new Set(last1h.filter((t) => t.side === "SELL").map((t) => t.wallet)).size;
+    const buyVolumeUsd5m = last5m.filter((t) => t.side === "BUY").reduce((s, t) => s + t.usdValue, 0);
+    const sellVolumeUsd5m = last5m.filter((t) => t.side === "SELL").reduce((s, t) => s + t.usdValue, 0);
+    const buyVolumeUsd1h = last1h.filter((t) => t.side === "BUY").reduce((s, t) => s + t.usdValue, 0);
+    const sellVolumeUsd1h = last1h.filter((t) => t.side === "SELL").reduce((s, t) => s + t.usdValue, 0);
+
+    return {
+      tokenMint: acc.tokenMint,
+      createdAt: firstSeen,
+      liquidityUsd: meta.liquidityUsd,
+      marketCapUsd: meta.marketCapUsd,
+      holderCount: meta.holderCount,
+      top10HolderPct: meta.top10HolderPct,
+      mintAuthorityRevoked: meta.mintAuthorityRevoked,
+      freezeAuthorityRevoked: meta.freezeAuthorityRevoked,
+      uniqueBuyers1h,
+      uniqueSellers1h,
+      buyVolumeUsd5m,
+      sellVolumeUsd5m,
+      buyVolumeUsd1h,
+      sellVolumeUsd1h,
+      updatedAt: this.clock.now(),
+    };
+  }
+}
