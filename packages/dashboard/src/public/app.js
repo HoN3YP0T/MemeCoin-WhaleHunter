@@ -44,6 +44,52 @@ function shortAddr(addr) {
   return `${addr.slice(0, 5)}…${addr.slice(-4)}`;
 }
 
+/* Whether the running feed is a real chain feed. Mock-scenario addresses are
+ * fabricated, so linking them out to an explorer would only ever 404 - links
+ * are rendered as plain text until a real provider is connected. */
+let feedIsReal = false;
+
+const EXPLORER_URL = {
+  token: (v) => `https://dexscreener.com/solana/${encodeURIComponent(v)}`,
+  wallet: (v) => `https://solscan.io/account/${encodeURIComponent(v)}`,
+  tx: (v) => `https://solscan.io/tx/${encodeURIComponent(v)}`,
+};
+
+function addrCell(value, kind) {
+  if (!value) return el("td", { class: "mono", text: "—" });
+  if (!feedIsReal) {
+    return el("td", { class: "mono", title: `${value} (simulated - no explorer page exists)` }, [
+      shortAddr(value),
+    ]);
+  }
+  return el("td", { class: "mono" }, [
+    el("a", {
+      class: "addr-link",
+      href: EXPLORER_URL[kind](value),
+      target: "_blank",
+      rel: "noopener noreferrer",
+      title: value,
+      text: shortAddr(value),
+    }),
+  ]);
+}
+
+function renderSourceBanner(overview) {
+  const banner = $("#source-banner");
+  const providers = Object.keys(overview.feed || {});
+  feedIsReal = providers.length > 0 && providers.some((p) => p !== "mock");
+
+  banner.hidden = false;
+  if (feedIsReal) {
+    banner.className = "source-banner source-banner-live";
+    banner.textContent = `LIVE CHAIN DATA · feed: ${providers.join(", ")} · trades are still paper-simulated`;
+  } else {
+    banner.className = "source-banner source-banner-mock";
+    banner.textContent =
+      "SIMULATED DATA · mock feed - wallets, tokens and trades below are fabricated fixtures, not real chain activity";
+  }
+}
+
 function pnlClass(n) {
   return n > 0 ? "pnl-positive" : n < 0 ? "pnl-negative" : "";
 }
@@ -72,7 +118,9 @@ function setConnectionState(ok) {
   const pill = $("#connection-pill");
   if (ok) {
     pill.className = "pill pill-good";
-    pill.textContent = "live";
+    // "polling", not "live": this reports the browser->API poll, and reading
+    // it as "the data is live" is exactly the wrong conclusion on a mock feed.
+    pill.textContent = "polling";
   } else {
     pill.className = "pill pill-bad";
     pill.textContent = "disconnected";
@@ -184,8 +232,8 @@ function renderPositionsTable(positions) {
   for (const p of positions) {
     tbody.appendChild(
       el("tr", { class: "row-clickable", "data-wallet": p.wallet }, [
-        el("td", { class: "mono", text: shortAddr(p.tokenMint) }),
-        el("td", { class: "mono", text: shortAddr(p.wallet) }),
+        addrCell(p.tokenMint, "token"),
+        addrCell(p.wallet, "wallet"),
         el("td", { class: "num", text: fmtUsd(p.entryPriceUsd) }),
         el("td", { class: "num", text: fmtUsd(p.currentPriceUsd) }),
         el("td", { class: `num ${pnlClass(p.unrealizedPnlUsd)}`, text: fmtUsd(p.unrealizedPnlUsd) }),
@@ -206,8 +254,8 @@ function renderTradesTable(trades) {
     const pnl = t.status === "CLOSED" ? t.realizedPnlUsd : t.unrealizedPnlUsd;
     tbody.appendChild(
       el("tr", { class: "row-clickable", "data-wallet": t.wallet }, [
-        el("td", { class: "mono", text: shortAddr(t.tokenMint) }),
-        el("td", { class: "mono", text: shortAddr(t.wallet) }),
+        addrCell(t.tokenMint, "token"),
+        addrCell(t.wallet, "wallet"),
         el("td", {}, [el("span", { class: `pill ${t.status === "OPEN" ? "pill-accent" : "pill-neutral"}`, text: t.status.toLowerCase() })]),
         el("td", { class: "num", text: fmtUsd(t.entryPriceUsd) }),
         el("td", { class: `num ${pnlClass(pnl)}`, text: fmtUsd(pnl) }),
@@ -353,7 +401,7 @@ function renderWhaleDrawer(detail) {
       const pnl = t.status === "CLOSED" ? t.realizedPnlUsd : t.unrealizedPnlUsd;
       tbody.appendChild(
         el("tr", {}, [
-          el("td", { class: "mono", text: shortAddr(t.tokenMint) }),
+          addrCell(t.tokenMint, "token"),
           el("td", { class: `num ${pnlClass(pnl)}`, text: fmtUsd(pnl) }),
           el("td", { text: t.status.toLowerCase() }),
         ]),
@@ -393,6 +441,9 @@ async function refresh() {
       getJson("/api/signals?limit=60"),
     ]);
 
+    // Before the tables: sets feedIsReal, which decides whether addresses
+    // render as explorer links or inert text.
+    renderSourceBanner(overview);
     renderStatTiles(overview);
     renderHealth(overview);
     renderPositionsTable(positions);

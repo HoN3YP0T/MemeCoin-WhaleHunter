@@ -511,3 +511,42 @@ tbody tr.row-clickable:hover td {
     grid-template-columns: 1fr;
   }
 }
+
+/* Data-source banner: says plainly whether the rows below are real chain
+   activity or mock fixtures, since "polling" in the topbar only describes
+   the browser->API connection. */
+.source-banner {
+  margin: 0 0 20px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.source-banner-mock {
+  background: rgba(234, 179, 8, 0.10);
+  border-color: rgba(234, 179, 8, 0.35);
+  color: #eab308;
+}
+
+.source-banner-live {
+  background: rgba(34, 197, 94, 0.10);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #22c55e;
+}
+
+.addr-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+  opacity: 0.95;
+}
+
+.addr-link:hover,
+.addr-link:focus-visible {
+  color: var(--accent, #3b82f6);
+  border-bottom-style: solid;
+}
