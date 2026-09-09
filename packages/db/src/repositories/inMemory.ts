@@ -1,0 +1,148 @@
+import type {
+  NormalizedTradeEvent,
+  Position,
+  Signal,
+  TokenRiskScore,
+  TokenStats,
+  WalletCluster,
+  WalletScoreBreakdown,
+  WalletStats,
+} from "@whale-sniper/core";
+import type {
+  IClusterRepository,
+  IPositionRepository,
+  IRiskStateRepository,
+  ISignalRepository,
+  ITokenRepository,
+  ITradeRepository,
+  IWalletRepository,
+  IWatchlistRepository,
+  Repositories,
+  RiskState,
+  WatchlistEntry,
+} from "./types.js";
+
+export class InMemoryWalletRepository implements IWalletRepository {
+  private stats = new Map<string, WalletStats>();
+  private scores = new Map<string, WalletScoreBreakdown>();
+
+  async upsertStats(stats: WalletStats): Promise<void> {
+    this.stats.set(stats.wallet, stats);
+  }
+  async getStats(wallet: string): Promise<WalletStats | undefined> {
+    return this.stats.get(wallet);
+  }
+  async upsertScore(score: WalletScoreBreakdown): Promise<void> {
+    this.scores.set(score.wallet, score);
+  }
+  async getScore(wallet: string): Promise<WalletScoreBreakdown | undefined> {
+    return this.scores.get(wallet);
+  }
+}
+
+export class InMemoryTokenRepository implements ITokenRepository {
+  private stats = new Map<string, TokenStats>();
+  private risk = new Map<string, TokenRiskScore>();
+
+  async upsertStats(stats: TokenStats): Promise<void> {
+    this.stats.set(stats.tokenMint, stats);
+  }
+  async getStats(tokenMint: string): Promise<TokenStats | undefined> {
+    return this.stats.get(tokenMint);
+  }
+  async upsertRiskScore(score: TokenRiskScore): Promise<void> {
+    this.risk.set(score.tokenMint, score);
+  }
+  async getRiskScore(tokenMint: string): Promise<TokenRiskScore | undefined> {
+    return this.risk.get(tokenMint);
+  }
+}
+
+export class InMemoryTradeRepository implements ITradeRepository {
+  private trades: NormalizedTradeEvent[] = [];
+
+  async recordTrade(event: NormalizedTradeEvent): Promise<void> {
+    this.trades.push(event);
+  }
+  async tradesForWallet(wallet: string): Promise<NormalizedTradeEvent[]> {
+    return this.trades.filter((t) => t.wallet === wallet);
+  }
+}
+
+export class InMemoryClusterRepository implements IClusterRepository {
+  private clusters = new Map<string, WalletCluster>();
+  async upsertCluster(cluster: WalletCluster): Promise<void> {
+    this.clusters.set(cluster.clusterId, cluster);
+  }
+  async getCluster(clusterId: string): Promise<WalletCluster | undefined> {
+    return this.clusters.get(clusterId);
+  }
+}
+
+export class InMemorySignalRepository implements ISignalRepository {
+  private signals = new Map<string, Signal>();
+  async saveSignal(signal: Signal): Promise<void> {
+    this.signals.set(signal.signalId, signal);
+  }
+  async getSignal(signalId: string): Promise<Signal | undefined> {
+    return this.signals.get(signalId);
+  }
+  async recentSignals(limit: number): Promise<Signal[]> {
+    return [...this.signals.values()].sort((a, b) => b.generatedAt - a.generatedAt).slice(0, limit);
+  }
+}
+
+export class InMemoryPositionRepository implements IPositionRepository {
+  private positions = new Map<string, Position>();
+  async savePosition(position: Position): Promise<void> {
+    this.positions.set(position.positionId, { ...position });
+  }
+  async getPosition(positionId: string): Promise<Position | undefined> {
+    return this.positions.get(positionId);
+  }
+  async getOpenPositions(): Promise<Position[]> {
+    return [...this.positions.values()].filter((p) => p.status === "OPEN");
+  }
+  async allPositions(): Promise<Position[]> {
+    return [...this.positions.values()];
+  }
+}
+
+export class InMemoryWatchlistRepository implements IWatchlistRepository {
+  private entries = new Map<string, WatchlistEntry>();
+  async load(): Promise<WatchlistEntry[]> {
+    return [...this.entries.values()];
+  }
+  async add(entry: WatchlistEntry): Promise<void> {
+    this.entries.set(entry.address, entry);
+  }
+}
+
+export class InMemoryRiskStateRepository implements IRiskStateRepository {
+  private state: RiskState = {
+    dailyLossUsd: 0,
+    dailyLossResetAt: Date.now(),
+    consecutiveLosses: 0,
+    killSwitchActive: false,
+  };
+  async get(): Promise<RiskState> {
+    return { ...this.state };
+  }
+  async update(partial: Partial<RiskState>): Promise<RiskState> {
+    this.state = { ...this.state, ...partial };
+    return { ...this.state };
+  }
+}
+
+export function createInMemoryRepositories(): Repositories {
+  return {
+    wallet: new InMemoryWalletRepository(),
+    token: new InMemoryTokenRepository(),
+    trade: new InMemoryTradeRepository(),
+    cluster: new InMemoryClusterRepository(),
+    signal: new InMemorySignalRepository(),
+    position: new InMemoryPositionRepository(),
+    watchlist: new InMemoryWatchlistRepository(),
+    riskState: new InMemoryRiskStateRepository(),
+  };
+}

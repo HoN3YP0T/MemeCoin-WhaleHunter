@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Wallet {
+  address           String   @id
+  label             String?
+  tradeCount        Int      @default(0)
+  winCount          Int      @default(0)
+  lossCount         Int      @default(0)
+  winRate           Float    @default(0)
+  realizedPnlUsd    Float    @default(0)
+  avgRoiPct         Float    @default(0)
+  maxDrawdownPct    Float    @default(0)
+  avgWhaleBuySizeUsd Float   @default(0)
+  earlyEntryFrequency Float  @default(0)
+  rugExposureCount  Int      @default(0)
+  firstTradeAt      DateTime?
+  lastTradeAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  scores    WalletScore[]
+  trades    Trade[]
+  positions Position[]
+  watchlist Watchlist?
+}
+
+model WalletScore {
+  id                String   @id @default(cuid())
+  walletAddress     String
+  wallet            Wallet   @relation(fields: [walletAddress], references: [address])
+  consistency       Float
+  timing            Float
+  selectivity       Float
+  exitQuality       Float
+  rugAvoidance      Float
+  recentPerformance Float
+  whaleScore        Float
+  passedHardGate    Boolean
+  gateFailureReasons String[]
+  computedAt        DateTime @default(now())
+
+  @@index([walletAddress])
+}
+
+model Token {
+  mint                String   @id
+  createdAt           DateTime @default(now())
+  liquidityUsd         Float    @default(0)
+  marketCapUsd          Float    @default(0)
+  holderCount          Int      @default(0)
+  top10HolderPct       Float    @default(0)
+  mintAuthorityRevoked  Boolean  @default(false)
+  freezeAuthorityRevoked Boolean @default(false)
+  updatedAt            DateTime @updatedAt
+
+  riskScores TokenRiskScoreRow[]
+  trades     Trade[]
+  signals    Signal[]
+  positions  Position[]
+}
+
+model TokenRiskScoreRow {
+  id                 String   @id @default(cuid())
+  tokenMint          String
+  token              Token    @relation(fields: [tokenMint], references: [mint])
+  ageRisk            Float
+  liquidityRisk      Float
+  concentrationRisk  Float
+  authorityRisk      Float
+  buyerDiversityRisk Float
+  flowRisk           Float
+  riskScore          Float
+  band               String
+  computedAt         DateTime @default(now())
+
+  @@index([tokenMint])
+}
+
+model Trade {
+  id            String   @id @default(cuid())
+  txSignature   String   @unique
+  walletAddress String
+  wallet        Wallet   @relation(fields: [walletAddress], references: [address])
+  tokenMint     String
+  token         Token    @relation(fields: [tokenMint], references: [mint])
+  side          String
+  tokenAmount   Float
+  usdValue      Float
+  priceUsd      Float
+  dex           String
+  pool          String
+  slot          Int
+  blockTime     DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([walletAddress])
+  @@index([tokenMint])
+}
+
+model Cluster {
+  id                  String   @id @default(cuid())
+  clusterKey          String   @unique
+  tokenMint           String?
+  members             String[]
+  edges               Json
+  concentratedOwnership Boolean @default(false)
+  coordinatedBuying     Boolean @default(false)
+  immediateLargeSelling Boolean @default(false)
+  creatorAssociatedWallets Boolean @default(false)
+  suspiciousLiquidityBehavior Boolean @default(false)
+  manipulationPenalty Float    @default(0)
+  computedAt          DateTime @default(now())
+}
+
+model Signal {
+  id                    String   @id @default(cuid())
+  signalKey             String   @unique
+  tokenMint             String
+  token                 Token    @relation(fields: [tokenMint], references: [mint])
+  triggeringWallet      String
+  triggeringTxSignature String
+  whaleQuality          Float
+  tokenQuality          Float
+  liquidity             Float
+  buyingMomentum        Float
+  independentBuyers     Float
+  earlyEntryQuality     Float
+  manipulationPenalty   Float
+  score                 Float
+  generatedAt           DateTime @default(now())
+
+  positions Position[]
+}
+
+model Position {
+  id                String   @id @default(cuid())
+  positionKey        String   @unique
+  tokenMint          String
+  token              Token    @relation(fields: [tokenMint], references: [mint])
+  signalId           String
+  signal             Signal   @relation(fields: [signalId], references: [id])
+  walletAddress      String
+  wallet             Wallet   @relation(fields: [walletAddress], references: [address])
+  status             String
+  entryPriceUsd      Float
+  entryUsdValue      Float
+  tokenAmount        Float
+  remainingTokenAmount Float
+  realizedPnlUsd     Float    @default(0)
+  feesUsd            Float    @default(0)
+  mfePct             Float    @default(0)
+  maePct             Float    @default(0)
+  exitReason         String?
+  openedAt           DateTime @default(now())
+  closedAt           DateTime?
+
+  @@index([tokenMint])
+  @@index([walletAddress])
+}
+
+model Watchlist {
+  walletAddress String   @id
+  wallet        Wallet?  @relation(fields: [walletAddress], references: [address])
+  label         String?
+  notes         String?
+  addedAt       DateTime @default(now())
+}
+
+model RiskState {
+  id                     String   @id @default("singleton")
+  dailyLossUsd           Float    @default(0)
+  dailyLossResetAt       DateTime @default(now())
+  consecutiveLosses      Int      @default(0)
+  cooldownUntil          DateTime?
+  killSwitchActive       Boolean  @default(false)
+  updatedAt              DateTime @updatedAt
+}
