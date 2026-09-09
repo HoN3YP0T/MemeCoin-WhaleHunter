@@ -9,19 +9,21 @@ import type {
   WalletScoreBreakdown,
   WalletStats,
 } from "@whale-sniper/core";
-import type {
-  ICreatorRegistryRepository,
-  IClusterRepository,
-  IPositionRepository,
-  IRiskStateRepository,
-  ISignalRepository,
-  ITokenRepository,
-  ITradeRepository,
-  IWalletRepository,
-  IWatchlistRepository,
-  Repositories,
-  RiskState,
-  WatchlistEntry,
+import {
+  normalizeWatchlistEntry,
+  type ICreatorRegistryRepository,
+  type IClusterRepository,
+  type IPositionRepository,
+  type IRiskStateRepository,
+  type ISignalRepository,
+  type ITokenRepository,
+  type ITradeRepository,
+  type IWalletRepository,
+  type IWatchlistRepository,
+  type Repositories,
+  type RiskState,
+  type WatchlistEntry,
+  type WatchlistEntryStatus,
 } from "./types.js";
 
 export class InMemoryWalletRepository implements IWalletRepository {
@@ -125,7 +127,14 @@ export class InMemoryWatchlistRepository implements IWatchlistRepository {
     return [...this.entries.values()];
   }
   async add(entry: WatchlistEntry): Promise<void> {
-    this.entries.set(entry.address, entry);
+    this.entries.set(entry.address, normalizeWatchlistEntry(entry));
+  }
+  async updateStatus(address: string, status: WatchlistEntryStatus, notes?: string): Promise<void> {
+    const existing = this.entries.get(address) ?? normalizeWatchlistEntry({ address, source: "auto-discovered" });
+    this.entries.set(address, { ...existing, status, notes: notes ?? existing.notes });
+  }
+  async listByStatus(status: WatchlistEntryStatus): Promise<WatchlistEntry[]> {
+    return [...this.entries.values()].filter((e) => e.status === status);
   }
 }
 

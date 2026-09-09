@@ -1,17 +1,19 @@
 import { riskBand, type CreatorReputation, type NormalizedTradeEvent, type Position, type Signal, type TokenRiskScore, type TokenStats, type WalletCluster, type WalletScoreBreakdown, type WalletStats } from "@whale-sniper/core";
-import type {
-  ICreatorRegistryRepository,
-  IClusterRepository,
-  IPositionRepository,
-  IRiskStateRepository,
-  ISignalRepository,
-  ITokenRepository,
-  ITradeRepository,
-  IWalletRepository,
-  IWatchlistRepository,
-  Repositories,
-  RiskState,
-  WatchlistEntry,
+import {
+  normalizeWatchlistEntry,
+  type ICreatorRegistryRepository,
+  type IClusterRepository,
+  type IPositionRepository,
+  type IRiskStateRepository,
+  type ISignalRepository,
+  type ITokenRepository,
+  type ITradeRepository,
+  type IWalletRepository,
+  type IWatchlistRepository,
+  type Repositories,
+  type RiskState,
+  type WatchlistEntry,
+  type WatchlistEntryStatus,
 } from "./types.js";
 
 /** Thin adapters over a generated PrismaClient. `prisma` is typed `any`
@@ -438,20 +440,53 @@ export class PrismaPositionRepository implements IPositionRepository {
   }
 }
 
+function rowToWatchlistEntry(row: any): WatchlistEntry {
+  return normalizeWatchlistEntry({
+    address: row.walletAddress,
+    label: row.label ?? undefined,
+    notes: row.notes ?? undefined,
+    status: row.status ?? undefined,
+    source: row.source ?? undefined,
+  });
+}
+
 export class PrismaWatchlistRepository implements IWatchlistRepository {
   constructor(private readonly prisma: any) {}
 
   async load(): Promise<WatchlistEntry[]> {
     const rows = await this.prisma.watchlist.findMany();
-    return rows.map((row: any) => ({ address: row.walletAddress, label: row.label, notes: row.notes }));
+    return rows.map(rowToWatchlistEntry);
   }
 
   async add(entry: WatchlistEntry): Promise<void> {
+    const normalized = normalizeWatchlistEntry(entry);
     await this.prisma.watchlist.upsert({
-      where: { walletAddress: entry.address },
-      create: { walletAddress: entry.address, label: entry.label, notes: entry.notes },
-      update: { label: entry.label, notes: entry.notes },
+      where: { walletAddress: normalized.address },
+      create: {
+        walletAddress: normalized.address,
+        label: normalized.label,
+        notes: normalized.notes,
+        status: normalized.status,
+        source: normalized.source,
+      },
+      update: { label: normalized.label, notes: normalized.notes, status: normalized.status, source: normalized.source },
     });
+  }
+
+  async updateStatus(address: string, status: WatchlistEntryStatus, notes?: string): Promise<void> {
+    await this.prisma.watchlist.upsert({
+      where: { walletAddress: address },
+      // A status update for an address with no prior watchlist row only
+      // happens via WhaleDiscoveryEngine (never a manual flow), so default
+      // source to "auto-discovered" on first creation here.
+      create: { walletAddress: address, status, notes, source: "auto-discovered" },
+      update: { status, notes },
+    });
+  }
+
+  async listByStatus(status: WatchlistEntryStatus): Promise<WatchlistEntry[]> {
+    const rows = await this.prisma.watchlist.findMany({ where: { status } });
+    return rows.map(rowToWatchlistEntry);
   }
 }
 

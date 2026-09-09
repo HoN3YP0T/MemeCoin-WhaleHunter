@@ -182,6 +182,10 @@ model Watchlist {
   wallet        Wallet?  @relation(fields: [walletAddress], references: [address])
   label         String?
   notes         String?
+  // "pending" | "active" | "rejected" - see WatchlistEntryStatus.
+  status        String   @default("active")
+  // "manual" | "auto-discovered" - see WatchlistEntrySource.
+  source        String   @default("manual")
   addedAt       DateTime @default(now())
 }
 

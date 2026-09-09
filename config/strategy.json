@@ -89,5 +89,9 @@
     "slippageSizeImpactK": 0.5,
     "dexFeePct": 0.25,
     "mockGasUsd": 0.15
+  },
+  "walletDiscovery": {
+    "enabled": false,
+    "autoPromote": false
   }
 }

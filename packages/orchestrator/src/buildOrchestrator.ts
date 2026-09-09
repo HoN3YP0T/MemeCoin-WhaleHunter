@@ -13,6 +13,7 @@ import {
   type TokenMetadataSeed,
 } from "@whale-sniper/token-intel";
 import { WalletStatsUpdater, WatchlistIndex } from "@whale-sniper/wallet-intel";
+import { WhaleDiscoveryEngine } from "@whale-sniper/whale-discovery";
 import { WhaleExitMonitor } from "@whale-sniper/whale-exit";
 import { SniperOrchestrator } from "./SniperOrchestrator.js";
 
@@ -83,6 +84,15 @@ export function buildOrchestrator(options: BuildOrchestratorOptions): BuiltOrche
   const positionManager = new PositionManager(bus, repos.position, config);
   const whaleExitMonitor = new WhaleExitMonitor(bus, positionManager, config);
 
+  const whaleDiscoveryEngine = new WhaleDiscoveryEngine({
+    bus,
+    config,
+    watchlistIndex,
+    watchlistRepo: repos.watchlist,
+    walletStatsSource: walletStatsUpdater,
+    clusterSource: clusterDetector,
+  });
+
   const metrics = new MetricsStore();
 
   const orchestrator = new SniperOrchestrator({
@@ -102,6 +112,7 @@ export function buildOrchestrator(options: BuildOrchestratorOptions): BuiltOrche
     metrics,
     creatorRegistry,
     creatorRegistryUpdater,
+    whaleDiscoveryEngine,
   });
 
   return { orchestrator, metrics, tokenMetadataProvider, relationshipSource, riskEngine, creatorRegistry };

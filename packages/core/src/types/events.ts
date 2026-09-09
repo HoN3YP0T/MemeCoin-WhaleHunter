@@ -61,8 +61,19 @@ export interface NormalizedTradeEvent {
 export interface DomainEventMap {
   "trade.normalized": NormalizedTradeEvent;
   "whale.detected": { wallet: string; tokenMint: string; usdValue: number; whaleScore: number };
-  "wallet.stats-updated": { wallet: string };
+  // tokenMint added so WhaleDiscoveryEngine can run ClusterDetector.detectForToken()
+  // (which is buffered per-token) off the trade that actually updated this
+  // wallet's stats, without a second lookup.
+  "wallet.stats-updated": { wallet: string; tokenMint: string };
   "wallet.scored": { wallet: string; score: number };
+  /** A never-before-seen wallet cleared the same hard gate/cluster checks a
+   * manually curated watchlist entry has to clear, but walletDiscovery.autoPromote
+   * is false - awaiting operator review via telegram-bot's /candidates,
+   * /approve, /reject. */
+  "wallet.discovery-candidate": { wallet: string; whaleScore: number };
+  /** A candidate cleared every check AND walletDiscovery.autoPromote is
+   * true - promoted straight to "active" without operator review. */
+  "wallet.discovery-promoted": { wallet: string; whaleScore: number };
   "token.stats-updated": { tokenMint: string };
   "cluster.detected": { clusterId: string; members: string[] };
   "signal.generated": { signalId: string; tokenMint: string; score: number };

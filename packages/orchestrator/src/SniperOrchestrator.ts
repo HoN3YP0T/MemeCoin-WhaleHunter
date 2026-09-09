@@ -17,6 +17,7 @@ import { computeSignal } from "@whale-sniper/signal-engine";
 import type { CreatorRegistryUpdater, TokenStatsCollector } from "@whale-sniper/token-intel";
 import { scoreTokenRisk } from "@whale-sniper/token-intel";
 import { scoreWallet, type WalletStatsUpdater, type WatchlistIndex } from "@whale-sniper/wallet-intel";
+import type { WhaleDiscoveryEngine } from "@whale-sniper/whale-discovery";
 import type { WhaleExitMonitor } from "@whale-sniper/whale-exit";
 
 export interface OrchestratorDeps {
@@ -36,6 +37,7 @@ export interface OrchestratorDeps {
   metrics: MetricsStore;
   creatorRegistry: CreatorRegistry;
   creatorRegistryUpdater: CreatorRegistryUpdater;
+  whaleDiscoveryEngine: WhaleDiscoveryEngine;
 }
 
 /**
@@ -58,6 +60,7 @@ export class SniperOrchestrator {
       this.deps.creatorRegistryUpdater.start(),
       this.deps.clusterDetector.start(),
       this.deps.whaleExitMonitor.start(),
+      this.deps.whaleDiscoveryEngine.start(),
       this.deps.metrics.start(this.deps.bus),
       this.deps.bus.on("trade.normalized", (event) => {
         void this.handle(event);

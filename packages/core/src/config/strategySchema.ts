@@ -120,6 +120,17 @@ export const executionSchema = z.object({
   mockGasUsd: z.number().nonnegative(),
 });
 
+export const walletDiscoverySchema = z.object({
+  // Off by default - WhaleDiscoveryEngine.start() is a no-op subscriber
+  // (never touches the watchlist) while this is false, so the manual
+  // watchlist-only path is completely unchanged unless an operator opts in.
+  enabled: z.boolean(),
+  // When true, a candidate that clears the hard gate + cluster check goes
+  // straight to "active" (tradeable) instead of "pending" (awaiting
+  // /approve via telegram-bot). Only meaningful when enabled is true.
+  autoPromote: z.boolean(),
+});
+
 export const strategyConfigSchema = z.object({
   walletGate: walletGateSchema,
   walletScoreWeights: walletScoreWeightsSchema,
@@ -132,6 +143,7 @@ export const strategyConfigSchema = z.object({
   whaleExit: whaleExitSchema,
   risk: riskSchema,
   execution: executionSchema,
+  walletDiscovery: walletDiscoverySchema,
 });
 
 export type StrategyConfig = z.infer<typeof strategyConfigSchema>;

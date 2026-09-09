@@ -10,10 +10,48 @@ import type {
   WalletStats,
 } from "@whale-sniper/core";
 
+/**
+ * Watchlist entries are a small state machine (see `WatchlistIndex` in
+ * wallet-intel and `WhaleDiscoveryEngine`):
+ * - "active": tradeable - `SniperOrchestrator` acts on this wallet's buys.
+ * - "pending": an auto-discovered candidate awaiting operator review
+ *   (`/candidates`, `/approve`, `/reject` in telegram-bot).
+ * - "rejected": auto-discovered but failed a hard gate/cluster check, or an
+ *   operator rejected it - never tradeable.
+ */
+export type WatchlistEntryStatus = "pending" | "active" | "rejected";
+/** "manual": from config/watchlist.json or an operator addition.
+ * "auto-discovered": promoted/pended by WhaleDiscoveryEngine. */
+export type WatchlistEntrySource = "manual" | "auto-discovered";
+
 export interface WatchlistEntry {
   address: string;
   label?: string;
   notes?: string;
+  /** Optional so every existing call site (config/watchlist.json entries,
+   * scripts/seed-watchlist.ts, existing tests, backtest fixtures) keeps
+   * compiling and behaving unchanged - `normalizeWatchlistEntry()` fills in
+   * the default ({status: "active", source: "manual"}) wherever entries are
+   * loaded or added. */
+  status?: WatchlistEntryStatus;
+  source?: WatchlistEntrySource;
+}
+
+/** Fills in the default status/source for a watchlist entry that doesn't
+ * specify them - applied at every point entries enter the system (both
+ * repository `add()` implementations, `WatchlistIndex.load()`/`upsert()`)
+ * so a manually-curated entry from config/watchlist.json (which has no
+ * concept of status/source) is always treated as an active, manually-added
+ * wallet, exactly as it always has been. */
+export function normalizeWatchlistEntry(entry: WatchlistEntry): WatchlistEntry & {
+  status: WatchlistEntryStatus;
+  source: WatchlistEntrySource;
+} {
+  return {
+    ...entry,
+    status: entry.status ?? "active",
+    source: entry.source ?? "manual",
+  };
 }
 
 export interface RiskState {
@@ -67,6 +105,11 @@ export interface IPositionRepository {
 export interface IWatchlistRepository {
   load(): Promise<WatchlistEntry[]>;
   add(entry: WatchlistEntry): Promise<void>;
+  /** Updates (or creates, for a wallet with no prior entry) a wallet's
+   * status - used by `WhaleDiscoveryEngine` to move a candidate to
+   * "pending"/"active"/"rejected" and by telegram-bot's /approve, /reject. */
+  updateStatus(address: string, status: WatchlistEntryStatus, notes?: string): Promise<void>;
+  listByStatus(status: WatchlistEntryStatus): Promise<WatchlistEntry[]>;
 }
 
 export interface IRiskStateRepository {

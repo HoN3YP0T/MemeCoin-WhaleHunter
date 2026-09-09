@@ -120,7 +120,7 @@ export class WalletStatsUpdater {
     }
 
     await this.repo.upsertStats(toStats(acc));
-    this.bus.emit("wallet.stats-updated", { wallet: event.wallet });
+    this.bus.emit("wallet.stats-updated", { wallet: event.wallet, tokenMint: event.tokenMint });
   }
 
   private handleBuy(acc: WalletAccumulator, event: NormalizedTradeEvent): void {
