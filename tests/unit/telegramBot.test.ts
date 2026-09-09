@@ -1,6 +1,13 @@
 import { EventBus, RuntimeFlags, createLogger } from "@whale-sniper/core";
-import { InMemoryPositionRepository, InMemorySignalRepository } from "@whale-sniper/db";
-import { formatEntry, formatExit, formatWhaleDetected, TelegramBot } from "@whale-sniper/telegram-bot";
+import { InMemoryPositionRepository, InMemorySignalRepository, InMemoryWatchlistRepository } from "@whale-sniper/db";
+import {
+  formatEntry,
+  formatExit,
+  formatWhaleAutoPromoted,
+  formatWhaleCandidateDiscovered,
+  formatWhaleDetected,
+  TelegramBot,
+} from "@whale-sniper/telegram-bot";
 import { describe, expect, it } from "vitest";
 import type { Position, Signal } from "@whale-sniper/core";
 
@@ -73,9 +80,26 @@ describe("TelegramBot", () => {
       bus: new EventBus(),
       positionRepo: new InMemoryPositionRepository(),
       signalRepo: new InMemorySignalRepository(),
+      watchlistRepo: new InMemoryWatchlistRepository(),
       runtimeFlags: new RuntimeFlags(),
       logger: createLogger("test", "silent"),
     });
     await expect(bot.start()).resolves.toBeUndefined();
+  });
+});
+
+describe("whale-discovery notification templates", () => {
+  it("formats a whale-candidate-discovered notification with approve/reject hints", () => {
+    const msg = formatWhaleCandidateDiscovered("WhaLe1111111111111111111111111111111111111", 72);
+    expect(msg).toContain("WHALE CANDIDATE DISCOVERED");
+    expect(msg).toContain("72");
+    expect(msg).toContain("/approve");
+    expect(msg).toContain("/reject");
+  });
+
+  it("formats an auto-promoted notification", () => {
+    const msg = formatWhaleAutoPromoted("WhaLe1111111111111111111111111111111111111", 91);
+    expect(msg).toContain("AUTO-PROMOTED");
+    expect(msg).toContain("91");
   });
 });

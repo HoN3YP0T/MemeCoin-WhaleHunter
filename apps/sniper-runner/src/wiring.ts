@@ -144,6 +144,8 @@ export async function buildAppContext(): Promise<AppContext> {
     bus,
     positionRepo: repos.position,
     signalRepo: repos.signal,
+    watchlistRepo: repos.watchlist,
+    watchlistIndex: built.watchlistIndex,
     runtimeFlags,
     logger,
   });

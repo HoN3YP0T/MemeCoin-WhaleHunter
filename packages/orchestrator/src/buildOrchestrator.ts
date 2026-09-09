@@ -43,6 +43,10 @@ export interface BuiltOrchestrator {
    * `repos.creatorReputation` at boot, before `orchestrator.start()` is
    * called - see buildAppContext(). */
   creatorRegistry: CreatorRegistry;
+  /** Exposed so telegram-bot's /approve and /reject commands can update
+   * the live in-process watchlist (the same object WhaleDiscoveryEngine
+   * upserts into) immediately, not just the persisted repository. */
+  watchlistIndex: WatchlistIndex;
 }
 
 /** Single place that assembles every sub-package into a SniperOrchestrator.
@@ -115,5 +119,5 @@ export function buildOrchestrator(options: BuildOrchestratorOptions): BuiltOrche
     whaleDiscoveryEngine,
   });
 
-  return { orchestrator, metrics, tokenMetadataProvider, relationshipSource, riskEngine, creatorRegistry };
+  return { orchestrator, metrics, tokenMetadataProvider, relationshipSource, riskEngine, creatorRegistry, watchlistIndex };
 }

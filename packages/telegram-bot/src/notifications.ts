@@ -42,6 +42,23 @@ export function formatSignalRejected(tokenMint: string, reason: string): string 
   return `⛔ Signal rejected for ${short(tokenMint)}: ${reason}`;
 }
 
+export function formatWhaleCandidateDiscovered(wallet: string, whaleScore: number): string {
+  return [
+    `🔎 WHALE CANDIDATE DISCOVERED`,
+    `Wallet: ${short(wallet)} (score ${whaleScore.toFixed(0)}/100)`,
+    `Cleared the hard gate and cluster check - awaiting review.`,
+    `/approve ${wallet}  or  /reject ${wallet}`,
+  ].join("\n");
+}
+
+export function formatWhaleAutoPromoted(wallet: string, whaleScore: number): string {
+  return [
+    `✅ AUTO-PROMOTED`,
+    `Wallet: ${short(wallet)} (score ${whaleScore.toFixed(0)}/100)`,
+    `walletDiscovery.autoPromote is on - now active on the watchlist.`,
+  ].join("\n");
+}
+
 function short(address: string): string {
   return address.length > 10 ? `${address.slice(0, 4)}...${address.slice(-4)}` : address;
 }

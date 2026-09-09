@@ -1,7 +1,16 @@
 import type { EventBus, Logger, RuntimeFlags } from "@whale-sniper/core";
-import type { IPositionRepository, ISignalRepository } from "@whale-sniper/db";
+import type { IPositionRepository, ISignalRepository, IWatchlistRepository } from "@whale-sniper/db";
+import type { WatchlistIndex } from "@whale-sniper/wallet-intel";
 import { Bot } from "grammy";
-import { formatEntry, formatExit, formatSignalRejected, formatWhaleDetected, formatWhaleExit } from "./notifications.js";
+import {
+  formatEntry,
+  formatExit,
+  formatSignalRejected,
+  formatWhaleAutoPromoted,
+  formatWhaleCandidateDiscovered,
+  formatWhaleDetected,
+  formatWhaleExit,
+} from "./notifications.js";
 
 export interface TelegramBotDeps {
   token: string;
@@ -9,6 +18,14 @@ export interface TelegramBotDeps {
   bus: EventBus;
   positionRepo: IPositionRepository;
   signalRepo: ISignalRepository;
+  watchlistRepo: IWatchlistRepository;
+  // Optional: when supplied, /approve and /reject also update the live
+  // in-process WatchlistIndex the orchestrator trades off of (the same
+  // object WhaleDiscoveryEngine.upsert()s directly), so an approval takes
+  // effect immediately rather than only on the next restart. Omitted in
+  // tests that don't need that - the repository write alone still
+  // persists the decision.
+  watchlistIndex?: WatchlistIndex;
   runtimeFlags: RuntimeFlags;
   logger: Logger;
 }
@@ -98,6 +115,38 @@ export class TelegramBot {
       this.deps.runtimeFlags.kill();
       await ctx.reply("Kill switch engaged. Trading halted for this session.");
     });
+
+    bot.command("candidates", async (ctx) => {
+      const pending = await this.deps.watchlistRepo.listByStatus("pending");
+      if (pending.length === 0) {
+        await ctx.reply("No pending whale candidates.");
+        return;
+      }
+      const lines = pending.map((e) => `${e.address}${e.notes ? ` - ${e.notes}` : ""}`);
+      await ctx.reply(`Pending whale candidates:\n${lines.join("\n")}`);
+    });
+
+    bot.command("approve", async (ctx) => {
+      const address = String(ctx.match ?? "").trim();
+      if (!address) {
+        await ctx.reply("Usage: /approve <address>");
+        return;
+      }
+      await this.deps.watchlistRepo.updateStatus(address, "active", "approved via telegram /approve");
+      this.deps.watchlistIndex?.upsert({ address, status: "active", source: "auto-discovered" });
+      await ctx.reply(`Approved ${address} - now active on the watchlist.`);
+    });
+
+    bot.command("reject", async (ctx) => {
+      const address = String(ctx.match ?? "").trim();
+      if (!address) {
+        await ctx.reply("Usage: /reject <address>");
+        return;
+      }
+      await this.deps.watchlistRepo.updateStatus(address, "rejected", "rejected via telegram /reject");
+      this.deps.watchlistIndex?.upsert({ address, status: "rejected", source: "auto-discovered" });
+      await ctx.reply(`Rejected ${address}.`);
+    });
   }
 
   /** Sends an arbitrary message to the configured chat (used by
@@ -143,6 +192,16 @@ export class TelegramBot {
     this.unsubscribers.push(
       this.deps.bus.on("signal.rejected", async ({ tokenMint, reason }) => {
         await send(formatSignalRejected(tokenMint, reason));
+      }),
+    );
+    this.unsubscribers.push(
+      this.deps.bus.on("wallet.discovery-candidate", async ({ wallet, whaleScore }) => {
+        await send(formatWhaleCandidateDiscovered(wallet, whaleScore));
+      }),
+    );
+    this.unsubscribers.push(
+      this.deps.bus.on("wallet.discovery-promoted", async ({ wallet, whaleScore }) => {
+        await send(formatWhaleAutoPromoted(wallet, whaleScore));
       }),
     );
   }

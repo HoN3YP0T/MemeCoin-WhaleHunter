@@ -8,6 +8,7 @@
   "dependencies": {
     "@whale-sniper/core": "*",
     "@whale-sniper/db": "*",
+    "@whale-sniper/wallet-intel": "*",
     "grammy": "^1.31.1"
   }
 }
