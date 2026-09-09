@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createLogger } from "@whale-sniper/core";
+import { createLogger , loadEnvFile } from "@whale-sniper/core";
 import { createRepositories } from "@whale-sniper/db";
 import { seedWatchlistFromFile } from "@whale-sniper/wallet-intel";
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseStrategyConfig } from "@whale-sniper/core";
+import { parseStrategyConfig , loadEnvFile } from "@whale-sniper/core";
 import { buildReport, formatReport, runReplay } from "@whale-sniper/backtest";
 import { allScenarios } from "@whale-sniper/feed";
 import type { TokenStats } from "@whale-sniper/core";

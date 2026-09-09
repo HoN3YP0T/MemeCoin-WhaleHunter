@@ -1,11 +1,27 @@
+import { loadEnvFile } from "@whale-sniper/core";
 import { buildAppContext, startApp } from "./wiring.js";
+
+// Before anything reads process.env - otherwise a configured .env is inert.
+const envFileLoaded = loadEnvFile();
 
 async function main(): Promise<void> {
   const ctx = await buildAppContext();
   ctx.logger.info(
-    { feedProvider: ctx.env.FEED_PROVIDER, liveTradingEnabled: ctx.env.LIVE_TRADING_ENABLED, healthPort: ctx.env.HEALTH_PORT },
+    {
+      envFile: envFileLoaded ? "loaded .env" : "no .env found - using defaults",
+      feedProvider: ctx.env.FEED_PROVIDER,
+      tokenDataProvider: ctx.env.TOKEN_DATA_PROVIDER,
+      liveTradingEnabled: ctx.env.LIVE_TRADING_ENABLED,
+      healthPort: ctx.env.HEALTH_PORT,
+    },
     "starting whale-sniper",
   );
+  if (ctx.env.FEED_PROVIDER === "mock") {
+    ctx.logger.warn(
+      {},
+      "feed provider is MOCK - all wallets, tokens and trades are fabricated fixtures. Set FEED_PROVIDER=helius in .env for real chain data.",
+    );
+  }
 
   const { stop } = await startApp(ctx);
 

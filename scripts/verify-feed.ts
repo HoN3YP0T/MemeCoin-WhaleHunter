@@ -12,6 +12,7 @@
  *   HELIUS_API_KEY=... npx tsx scripts/verify-feed.ts --seconds 60
  */
 
+import { loadEnvFile } from "@whale-sniper/core";
 import { Connection, PublicKey } from "@solana/web3.js";
 import {
   decodePumpFunTradeLog,
@@ -26,6 +27,7 @@ function arg(flag: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+loadEnvFile();
 const apiKey = process.env.HELIUS_API_KEY ?? "";
 const seconds = arg("--seconds", 30);
 const sampleLimit = arg("--samples", 3);
@@ -33,8 +35,9 @@ const sampleLimit = arg("--samples", 3);
 const SOL_USD_PRICE = arg("--sol-price", 150);
 
 if (!apiKey) {
-  console.error("HELIUS_API_KEY is not set.\n");
-  console.error("  HELIUS_API_KEY=your-key npx tsx scripts/verify-feed.ts");
+  console.error("HELIUS_API_KEY is not set (checked .env and the environment).\n");
+  console.error("  Put HELIUS_API_KEY=your-key in .env, or:");
+  console.error("  HELIUS_API_KEY=your-key npm run verify:feed");
   process.exit(1);
 }
 

@@ -34,6 +34,32 @@ const envSchema = z.object({
 
 export type AppEnv = z.infer<typeof envSchema>;
 
+/**
+ * Loads a `.env` file into `process.env`, if one exists.
+ *
+ * Must be called by every entry point BEFORE `loadEnv()`. Without it a
+ * `.env` file is inert - the schema below reads `process.env` and nothing
+ * else, so an operator who sets HELIUS_API_KEY there gets silently dropped
+ * back to the mock feed with no error explaining why.
+ *
+ * Uses Node's built-in `process.loadEnvFile` (v20.12+/21.7+; this repo
+ * requires >=22) rather than the dotenv package - no dependency needed.
+ * Existing process env vars win, so `FEED_PROVIDER=mock npm run start`
+ * still overrides the file.
+ */
+export function loadEnvFile(path = ".env"): boolean {
+  const before = { ...process.env };
+  try {
+    process.loadEnvFile(path);
+  } catch {
+    return false; // absent or unreadable - mock mode needs no .env
+  }
+  for (const [key, value] of Object.entries(before)) {
+    if (value !== undefined) process.env[key] = value;
+  }
+  return true;
+}
+
 let cached: AppEnv | undefined;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
