@@ -1,23 +1,21 @@
 import { newId, type EventBus, type Position, type Signal, type StrategyConfig, type TokenStats } from "@whale-sniper/core";
 import type { IPositionRepository } from "@whale-sniper/db";
-import { simulateFill } from "./fillSimulator.js";
+import { simulateFill, type FillResult } from "./fillSimulator.js";
 
-export function openPaperPosition(
+/** Builds a fresh Position from an already-executed entry fill. Shared by
+ * openPaperPosition (which simulates the fill itself) and execution's
+ * paperExecutionAdapter/executionPipeline (which already has a fill result
+ * from IExecutionAdapter.submitOrder and must not re-simulate it). */
+export function buildPositionFromFill(
   signal: Signal,
   triggeringWallet: string,
   triggeringTxSignature: string,
-  tokenStats: TokenStats,
   tradeSizeUsd: number,
-  quotePriceUsd: number,
+  fill: FillResult,
   config: StrategyConfig,
 ): Position {
-  const fill = simulateFill(
-    { side: "BUY", usdValue: tradeSizeUsd, quotePriceUsd, liquidityUsd: tokenStats.liquidityUsd },
-    config.execution,
-  );
   const entryPriceUsd = fill.filledPriceUsd;
   const tokenAmount = fill.tokenAmount;
-
   const stopLossPriceUsd = entryPriceUsd * (1 - config.position.initialStopLossPct / 100);
 
   return {
@@ -53,6 +51,22 @@ export function openPaperPosition(
     feesUsd: fill.feesUsd,
     openedAt: Date.now(),
   };
+}
+
+export function openPaperPosition(
+  signal: Signal,
+  triggeringWallet: string,
+  triggeringTxSignature: string,
+  tokenStats: TokenStats,
+  tradeSizeUsd: number,
+  quotePriceUsd: number,
+  config: StrategyConfig,
+): Position {
+  const fill = simulateFill(
+    { side: "BUY", usdValue: tradeSizeUsd, quotePriceUsd, liquidityUsd: tokenStats.liquidityUsd },
+    config.execution,
+  );
+  return buildPositionFromFill(signal, triggeringWallet, triggeringTxSignature, tradeSizeUsd, fill, config);
 }
 
 export interface ExitResult {

@@ -1,0 +1,98 @@
+import type { RuntimeFlags, StrategyConfig } from "@whale-sniper/core";
+import type { IRiskStateRepository } from "@whale-sniper/db";
+
+export interface RiskCheckInput {
+  tradeSizeUsd: number;
+  tokenMint: string;
+  clusterId?: string;
+  estimatedSlippagePct: number;
+  estimatedTxCostUsd: number;
+  openPositionsCount: number;
+  totalExposureUsd: number;
+  perTokenExposureUsd: number;
+  perClusterExposureUsd: number;
+}
+
+export interface RiskVeto {
+  vetoed: boolean;
+  reason?: string;
+}
+
+/**
+ * Independent of the signal score - can veto any trade on its own grounds.
+ * Wired as a hard gate right before order build, and also fed into
+ * entryGate as `riskEngineVeto` so a single EntryGateResult carries every
+ * failure reason.
+ */
+export class RiskEngine {
+  constructor(
+    private readonly repo: IRiskStateRepository,
+    private readonly runtimeFlags: RuntimeFlags,
+  ) {}
+
+  async evaluate(input: RiskCheckInput, config: StrategyConfig): Promise<RiskVeto> {
+    if (this.runtimeFlags.killed) return { vetoed: true, reason: "kill switch active" };
+    if (this.runtimeFlags.paused) return { vetoed: true, reason: "trading paused" };
+
+    const r = config.risk;
+    const state = await this.repo.get();
+
+    if (state.killSwitchActive) return { vetoed: true, reason: "risk engine kill switch active" };
+    if (state.cooldownUntil && Date.now() < state.cooldownUntil) {
+      return { vetoed: true, reason: `cooldown active until ${new Date(state.cooldownUntil).toISOString()}` };
+    }
+    if (state.consecutiveLosses >= r.maxConsecutiveLosses) {
+      return { vetoed: true, reason: `consecutive losses ${state.consecutiveLosses} >= max ${r.maxConsecutiveLosses}` };
+    }
+    if (state.dailyLossUsd >= r.maxDailyLossUsd) {
+      return { vetoed: true, reason: `daily loss $${state.dailyLossUsd.toFixed(0)} >= max $${r.maxDailyLossUsd}` };
+    }
+    if (input.tradeSizeUsd > r.maxTradeSizeUsd) {
+      return { vetoed: true, reason: `trade size $${input.tradeSizeUsd} > max $${r.maxTradeSizeUsd}` };
+    }
+    if (input.openPositionsCount >= r.maxOpenPositions) {
+      return { vetoed: true, reason: `open positions ${input.openPositionsCount} >= max ${r.maxOpenPositions}` };
+    }
+    if (input.totalExposureUsd + input.tradeSizeUsd > r.maxTotalExposureUsd) {
+      return { vetoed: true, reason: `total exposure would exceed max $${r.maxTotalExposureUsd}` };
+    }
+    if (input.perTokenExposureUsd + input.tradeSizeUsd > r.maxPerTokenExposureUsd) {
+      return { vetoed: true, reason: `per-token exposure would exceed max $${r.maxPerTokenExposureUsd}` };
+    }
+    if (input.clusterId && input.perClusterExposureUsd + input.tradeSizeUsd > r.maxPerClusterExposureUsd) {
+      return { vetoed: true, reason: `per-cluster exposure would exceed max $${r.maxPerClusterExposureUsd}` };
+    }
+    if (input.estimatedSlippagePct > r.maxSlippagePct) {
+      return { vetoed: true, reason: `estimated slippage ${input.estimatedSlippagePct.toFixed(2)}% > max ${r.maxSlippagePct}%` };
+    }
+    if (input.estimatedTxCostUsd > r.maxTxCostUsd) {
+      return { vetoed: true, reason: `estimated tx cost $${input.estimatedTxCostUsd.toFixed(2)} > max $${r.maxTxCostUsd}` };
+    }
+
+    return { vetoed: false };
+  }
+
+  /** Called after every closed trade to update the rolling risk state
+   * (daily loss, consecutive losses, cooldown). */
+  async recordTradeResult(pnlUsd: number, config: StrategyConfig): Promise<void> {
+    const state = await this.repo.get();
+    const now = Date.now();
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const resetDaily = now - state.dailyLossResetAt > dayMs;
+    const dailyLossUsd = (resetDaily ? 0 : state.dailyLossUsd) + Math.max(0, -pnlUsd);
+    const consecutiveLosses = pnlUsd < 0 ? state.consecutiveLosses + 1 : 0;
+    const cooldownUntil = pnlUsd < 0 ? now + config.risk.cooldownSecondsAfterLoss * 1000 : state.cooldownUntil;
+
+    await this.repo.update({
+      dailyLossUsd,
+      dailyLossResetAt: resetDaily ? now : state.dailyLossResetAt,
+      consecutiveLosses,
+      cooldownUntil,
+    });
+  }
+
+  async killSwitch(active: boolean): Promise<void> {
+    await this.repo.update({ killSwitchActive: active });
+  }
+}
