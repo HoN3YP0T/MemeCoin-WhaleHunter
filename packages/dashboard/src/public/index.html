@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WhaleHunter Operator Dashboard</title>
+  <link rel="stylesheet" href="/dashboard/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">WH</span>
+        <div class="brand-text">
+          <h1>WhaleHunter</h1>
+          <p>Operator dashboard &middot; read-only</p>
+        </div>
+      </div>
+      <div class="topbar-status">
+        <span class="pill pill-neutral" id="connection-pill">connecting&hellip;</span>
+        <span class="updated-at" id="updated-at"></span>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="stat-grid" id="stat-grid" aria-label="Overview metrics">
+        <!-- populated by app.js -->
+      </section>
+
+      <section class="panel-grid">
+        <div class="panel panel-wide">
+          <div class="panel-header">
+            <h2>Open positions</h2>
+            <span class="panel-count" id="positions-count">0</span>
+          </div>
+          <div class="table-scroll">
+            <table id="positions-table">
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Whale</th>
+                  <th class="num">Entry</th>
+                  <th class="num">Current</th>
+                  <th class="num">Unrealized PnL</th>
+                  <th class="num">Signal</th>
+                  <th>Opened</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <p class="empty-state" hidden>No open positions right now.</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Feed &amp; pipeline health</h2>
+          </div>
+          <div id="health-strip" class="health-strip"></div>
+        </div>
+      </section>
+
+      <section class="panel-grid">
+        <div class="panel panel-wide">
+          <div class="panel-header">
+            <h2>Trade history</h2>
+            <span class="panel-count" id="trades-count">0</span>
+          </div>
+          <div class="table-scroll">
+            <table id="trades-table">
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Whale</th>
+                  <th>Status</th>
+                  <th class="num">Entry</th>
+                  <th class="num">PnL</th>
+                  <th class="num">Signal</th>
+                  <th>Exit reason</th>
+                  <th>Closed</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <p class="empty-state" hidden>No trades yet.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-grid">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Whales</h2>
+            <span class="panel-count" id="whales-count">0</span>
+          </div>
+          <div class="table-scroll">
+            <table id="whales-table">
+              <thead>
+                <tr>
+                  <th>Wallet</th>
+                  <th>Status</th>
+                  <th class="num">Score</th>
+                  <th class="num">Trades</th>
+                  <th class="num">PnL</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <p class="empty-state" hidden>No watchlisted whales yet.</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Discovery candidates</h2>
+            <span class="panel-count" id="candidates-count">0</span>
+          </div>
+          <div class="table-scroll">
+            <table id="candidates-table">
+              <thead>
+                <tr>
+                  <th>Wallet</th>
+                  <th class="num">Score</th>
+                  <th>Gate</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <p class="empty-state" hidden>No candidates pending review.</p>
+          </div>
+          <p class="panel-footnote">Review via Telegram: <code>/candidates</code>, <code>/approve</code>, <code>/reject</code>.</p>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Signal feed</h2>
+            <span class="panel-count" id="signals-count">0</span>
+          </div>
+          <ul class="signal-log" id="signal-log"></ul>
+          <p class="empty-state" id="signals-empty" hidden>No signals yet.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="drawer" id="whale-drawer" hidden>
+    <div class="drawer-backdrop" id="whale-drawer-backdrop"></div>
+    <div class="drawer-panel">
+      <button class="drawer-close" id="whale-drawer-close" aria-label="Close">&times;</button>
+      <div id="whale-drawer-content"></div>
+    </div>
+  </div>
+
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>
