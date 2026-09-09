@@ -20,6 +20,7 @@ interface TokenAccumulator {
   tokenMint: string;
   trades: WindowedTrade[]; // pruned to the last hour on every update
   peakLiquidityUsd: number;
+  lastBlockTime: number;
 }
 
 const ONE_HOUR = 3600;
@@ -29,7 +30,7 @@ const FIVE_MIN = 300;
 const RUG_LIQUIDITY_DROP_RATIO = 0.5;
 
 function newAccumulator(tokenMint: string): TokenAccumulator {
-  return { tokenMint, trades: [], peakLiquidityUsd: 0 };
+  return { tokenMint, trades: [], peakLiquidityUsd: 0, lastBlockTime: 0 };
 }
 
 /**
@@ -56,10 +57,14 @@ export class TokenStatsCollector {
     });
   }
 
+  /** Stats "as of" the last trade actually observed for this token - using
+   * that trade's own blockTime rather than the wall clock, so results stay
+   * correct whether driven by a live feed or a backtest replay with
+   * synthetic historical timestamps. */
   getStats(tokenMint: string): TokenStats | undefined {
     const acc = this.accumulators.get(tokenMint);
     if (!acc) return undefined;
-    return this.buildStats(acc, this.clock.now() / 1000);
+    return this.buildStats(acc, acc.lastBlockTime);
   }
 
   private async handle(event: NormalizedTradeEvent): Promise<void> {
@@ -71,6 +76,7 @@ export class TokenStatsCollector {
 
     acc.trades.push({ blockTime: event.blockTime, side: event.side, usdValue: event.usdValue, wallet: event.wallet });
     acc.trades = acc.trades.filter((t) => t.blockTime >= event.blockTime - ONE_HOUR);
+    acc.lastBlockTime = Math.max(acc.lastBlockTime, event.blockTime);
 
     const meta = this.metadata.get(event.tokenMint);
     acc.peakLiquidityUsd = Math.max(acc.peakLiquidityUsd, meta.liquidityUsd);

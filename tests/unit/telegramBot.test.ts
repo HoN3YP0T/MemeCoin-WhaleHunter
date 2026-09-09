@@ -2,7 +2,7 @@ import { EventBus, RuntimeFlags, createLogger } from "@whale-sniper/core";
 import { InMemoryPositionRepository, InMemorySignalRepository } from "@whale-sniper/db";
 import { formatEntry, formatExit, formatWhaleDetected, TelegramBot } from "@whale-sniper/telegram-bot";
 import { describe, expect, it } from "vitest";
-import type { Position, Signal, WalletScoreBreakdown } from "@whale-sniper/core";
+import type { Position, Signal } from "@whale-sniper/core";
 
 function position(overrides: Partial<Position> = {}): Position {
   return {
@@ -43,25 +43,9 @@ function signal(): Signal {
   };
 }
 
-function walletScore(): WalletScoreBreakdown {
-  return {
-    wallet: "W",
-    consistency: 80,
-    timing: 80,
-    selectivity: 80,
-    exitQuality: 80,
-    rugAvoidance: 100,
-    recentPerformance: 80,
-    whaleScore: 85,
-    passedHardGate: true,
-    gateFailureReasons: [],
-    computedAt: Date.now(),
-  };
-}
-
 describe("notification templates", () => {
   it("formats a whale-detected notification with the wallet score and truncated addresses", () => {
-    const msg = formatWhaleDetected("WhaLe1111111111111111111111111111111111111", "TokenMintAddress1111111111111111111111111", 4000, walletScore());
+    const msg = formatWhaleDetected("WhaLe1111111111111111111111111111111111111", "TokenMintAddress1111111111111111111111111", 4000, 85);
     expect(msg).toContain("Whale buy detected");
     expect(msg).toContain("85");
     expect(msg).toContain("$4000");

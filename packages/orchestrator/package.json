@@ -1,0 +1,20 @@
+{
+  "name": "@whale-sniper/orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@whale-sniper/cluster-detect": "*",
+    "@whale-sniper/core": "*",
+    "@whale-sniper/db": "*",
+    "@whale-sniper/execution": "*",
+    "@whale-sniper/monitoring": "*",
+    "@whale-sniper/position-mgmt": "*",
+    "@whale-sniper/signal-engine": "*",
+    "@whale-sniper/token-intel": "*",
+    "@whale-sniper/wallet-intel": "*",
+    "@whale-sniper/whale-exit": "*"
+  }
+}

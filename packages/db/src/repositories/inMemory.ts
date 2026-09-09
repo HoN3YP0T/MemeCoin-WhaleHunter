@@ -81,14 +81,23 @@ export class InMemoryClusterRepository implements IClusterRepository {
 
 export class InMemorySignalRepository implements ISignalRepository {
   private signals = new Map<string, Signal>();
+  private insertionOrder = new Map<string, number>();
+  private counter = 0;
+
   async saveSignal(signal: Signal): Promise<void> {
     this.signals.set(signal.signalId, signal);
+    this.insertionOrder.set(signal.signalId, this.counter++);
   }
   async getSignal(signalId: string): Promise<Signal | undefined> {
     return this.signals.get(signalId);
   }
   async recentSignals(limit: number): Promise<Signal[]> {
-    return [...this.signals.values()].sort((a, b) => b.generatedAt - a.generatedAt).slice(0, limit);
+    // generatedAt is wall-clock ms and can tie under fast synchronous
+    // replay (many signals generated within the same millisecond); break
+    // ties by insertion order so "most recent" stays meaningful.
+    return [...this.signals.values()]
+      .sort((a, b) => b.generatedAt - a.generatedAt || this.insertionOrder.get(b.signalId)! - this.insertionOrder.get(a.signalId)!)
+      .slice(0, limit);
   }
 }
 

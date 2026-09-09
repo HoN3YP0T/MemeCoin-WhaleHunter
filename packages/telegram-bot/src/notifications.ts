@@ -1,12 +1,12 @@
-import type { Position, Signal, WalletScoreBreakdown } from "@whale-sniper/core";
+import type { Position, Signal } from "@whale-sniper/core";
 
 // Notification templates deliberately use emoji, matching the spec's own
 // examples - the one place in this codebase emoji are intentional.
 
-export function formatWhaleDetected(wallet: string, tokenMint: string, usdValue: number, whaleScore: WalletScoreBreakdown): string {
+export function formatWhaleDetected(wallet: string, tokenMint: string, usdValue: number, whaleScore: number): string {
   return [
     `🐋 Whale buy detected`,
-    `Wallet: ${short(wallet)} (score ${whaleScore.whaleScore.toFixed(0)}/100)`,
+    `Wallet: ${short(wallet)} (score ${whaleScore.toFixed(0)}/100)`,
     `Token: ${short(tokenMint)}`,
     `Size: $${usdValue.toFixed(0)}`,
   ].join("\n");

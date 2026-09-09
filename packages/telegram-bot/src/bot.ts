@@ -1,7 +1,7 @@
 import type { EventBus, Logger, RuntimeFlags } from "@whale-sniper/core";
 import type { IPositionRepository, ISignalRepository } from "@whale-sniper/db";
 import { Bot } from "grammy";
-import { formatEntry, formatExit, formatSignalRejected, formatWhaleExit } from "./notifications.js";
+import { formatEntry, formatExit, formatSignalRejected, formatWhaleDetected, formatWhaleExit } from "./notifications.js";
 
 export interface TelegramBotDeps {
   token: string;
@@ -110,6 +110,11 @@ export class TelegramBot {
       }
     };
 
+    this.unsubscribers.push(
+      this.deps.bus.on("whale.detected", async ({ wallet, tokenMint, usdValue, whaleScore }) => {
+        await send(formatWhaleDetected(wallet, tokenMint, usdValue, whaleScore));
+      }),
+    );
     this.unsubscribers.push(
       this.deps.bus.on("position.closed", async ({ positionId }) => {
         const position = await this.deps.positionRepo.getPosition(positionId);

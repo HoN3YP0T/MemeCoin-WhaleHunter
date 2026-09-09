@@ -106,21 +106,24 @@ export function normalWhaleBuyScenario(seed = 1): ScenarioResult {
   const events: RawFeedEvent[] = [...history];
   let t = baseTime;
 
-  // A couple of small independent buys establish the token exists.
+  // A couple of small independent buys establish the token exists. Spaced
+  // well beyond the cluster detector's timing-correlation window (15s) so
+  // organic, spread-out buying isn't mistaken for coordinated buying, while
+  // still landing inside the 5-minute buying-momentum window.
   for (let i = 0; i < 2; i++) {
     events.push(trade(independentBuyerWallet("normal", i), tokenMint, "BUY", 500, 500, 1, t));
-    t += 5;
+    t += 100;
   }
 
   // The whale buys early and big.
   events.push(trade(whaleWallet, tokenMint, "BUY", 4000, 4000, 1, t));
   const whaleEntryTime = t;
-  t += 10;
+  t += 100;
 
   // Independent momentum follows the whale in, from distinct wallets.
   for (let i = 2; i < 6; i++) {
     events.push(trade(independentBuyerWallet("normal", i), tokenMint, "BUY", 300 + i * 50, (300 + i * 50) * 1.05, 1.05, t));
-    t += 8;
+    t += 45;
   }
 
   // Price runs up; a later tick from another buyer confirms momentum.
@@ -235,7 +238,7 @@ export function whaleExitScenario(seed = 4): ScenarioResult {
 
   for (let i = 0; i < 3; i++) {
     events.push(trade(independentBuyerWallet("exit", i), tokenMint, "BUY", 500, 500, 1, t));
-    t += 5;
+    t += 100;
   }
 
   const entryAmount = 5000;

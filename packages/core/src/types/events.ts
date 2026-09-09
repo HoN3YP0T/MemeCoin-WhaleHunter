@@ -60,6 +60,7 @@ export interface NormalizedTradeEvent {
 /** Domain events published on the shared event bus. */
 export interface DomainEventMap {
   "trade.normalized": NormalizedTradeEvent;
+  "whale.detected": { wallet: string; tokenMint: string; usdValue: number; whaleScore: number };
   "wallet.stats-updated": { wallet: string };
   "wallet.scored": { wallet: string; score: number };
   "token.stats-updated": { tokenMint: string };
