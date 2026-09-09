@@ -1,0 +1,15 @@
+{
+  "name": "@whale-sniper/sniper-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.ts",
+  "dependencies": {
+    "@whale-sniper/core": "*",
+    "@whale-sniper/db": "*",
+    "@whale-sniper/feed": "*",
+    "@whale-sniper/monitoring": "*",
+    "@whale-sniper/orchestrator": "*",
+    "@whale-sniper/telegram-bot": "*"
+  }
+}

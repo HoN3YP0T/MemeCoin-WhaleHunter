@@ -174,7 +174,10 @@ export class SniperOrchestrator {
     this.deps.metrics.recordLatencies(result.latencyMs);
 
     if (!result.passed) {
-      this.deps.metrics.recordOrderFailed();
+      // Entry gate / risk veto rejections are not order failures - they
+      // never reached order submission. metrics.start() already counts
+      // these via the signal.rejected event; recordOrderFailed() is
+      // reserved for a submitted order that actually failed to fill.
       return;
     }
 

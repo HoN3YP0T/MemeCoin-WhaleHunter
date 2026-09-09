@@ -100,15 +100,21 @@ export class TelegramBot {
     });
   }
 
+  /** Sends an arbitrary message to the configured chat (used by
+   * monitoring's AlertManager for threshold alerts). A no-op whenever the
+   * bot isn't running or no chat is configured - callers don't need to
+   * check either condition themselves. */
+  async notify(text: string): Promise<void> {
+    if (!this.deps.chatId || !this.bot) return;
+    try {
+      await this.bot.api.sendMessage(this.deps.chatId, text);
+    } catch (err) {
+      this.deps.logger.warn({ err: err instanceof Error ? err.message : String(err) }, "failed to send telegram notification");
+    }
+  }
+
   private registerNotifications(): void {
-    const send = async (text: string) => {
-      if (!this.deps.chatId || !this.bot) return;
-      try {
-        await this.bot.api.sendMessage(this.deps.chatId, text);
-      } catch (err) {
-        this.deps.logger.warn({ err: err instanceof Error ? err.message : String(err) }, "failed to send telegram notification");
-      }
-    };
+    const send = (text: string) => this.notify(text);
 
     this.unsubscribers.push(
       this.deps.bus.on("whale.detected", async ({ wallet, tokenMint, usdValue, whaleScore }) => {
