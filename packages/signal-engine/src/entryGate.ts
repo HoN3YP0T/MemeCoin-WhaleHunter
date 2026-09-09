@@ -1,4 +1,4 @@
-import type { EntryGateResult, Signal, StrategyConfig, TokenRiskScore, TokenStats, WalletCluster, WalletScoreBreakdown } from "@whale-sniper/core";
+import type { DexName, EntryGateResult, Signal, StrategyConfig, TokenRiskScore, TokenStats, WalletCluster, WalletScoreBreakdown } from "@whale-sniper/core";
 
 export interface EntryGateInputs {
   walletScore: WalletScoreBreakdown;
@@ -8,6 +8,13 @@ export interface EntryGateInputs {
   cluster?: WalletCluster;
   estimatedSlippagePct: number;
   riskEngineVeto?: { vetoed: boolean; reason?: string };
+  /** DEX the triggering trade happened on - checked against
+   * config.tokenThresholds.allowedDexes (e.g. pumpfun + raydium). Optional
+   * for callers/tests that predate this check; omitted means "not checked". */
+  dex?: DexName;
+  /** Token age in seconds as of the triggering trade's blockTime. Optional
+   * for the same reason as `dex`. */
+  tokenAgeSeconds?: number;
 }
 
 /**
@@ -31,6 +38,19 @@ export function evaluateEntryGate(input: EntryGateInputs, config: StrategyConfig
 
   if (input.tokenStats.liquidityUsd < t.minLiquidityUsd) {
     reasons.push(`liquidity ${input.tokenStats.liquidityUsd.toFixed(0)} < min ${t.minLiquidityUsd}`);
+  }
+
+  if (input.dex !== undefined && !t.allowedDexes.includes(input.dex)) {
+    reasons.push(`dex "${input.dex}" not in allowed list [${t.allowedDexes.join(", ")}]`);
+  }
+
+  if (input.tokenAgeSeconds !== undefined) {
+    if (input.tokenAgeSeconds < t.minAgeSeconds) {
+      reasons.push(`token age ${input.tokenAgeSeconds.toFixed(0)}s < min ${t.minAgeSeconds}s`);
+    }
+    if (input.tokenAgeSeconds > t.maxAgeSeconds) {
+      reasons.push(`token age ${input.tokenAgeSeconds.toFixed(0)}s > max ${t.maxAgeSeconds}s`);
+    }
   }
 
   if (input.cluster) {

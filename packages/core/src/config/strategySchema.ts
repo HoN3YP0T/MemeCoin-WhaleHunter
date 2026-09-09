@@ -30,10 +30,23 @@ export const tokenRiskWeightsSchema = z.object({
   flowRisk: z.number(),
 });
 
+export const dexNameSchema = z.enum(["raydium", "orca", "pumpfun", "meteora", "jupiter", "unknown"]);
+
 export const tokenThresholdsSchema = z.object({
   maxTokenRiskScore: z.number().min(0).max(100),
   minLiquidityUsd: z.number().positive(),
   minAgeSeconds: z.number().nonnegative(),
+  // Upper bound on token age at entry time - a whale ENTRY sniper wants
+  // fresh discovery, not a position opened hours into an already-mature
+  // pump. Trades on tokens older than this are rejected by the entry gate
+  // even if every other safeguard passes.
+  maxAgeSeconds: z.number().positive(),
+  // Which DEXes/venues a trade is allowed to have happened on. pump.fun
+  // tokens trade on its own bonding-curve program until ~$69k market cap,
+  // then migrate to Raydium - both are legitimate venues for the same
+  // token over its lifecycle, so both must be allowed for pump.fun/DexScreener
+  // trading to work end-to-end.
+  allowedDexes: z.array(dexNameSchema).min(1),
 });
 
 export const clusterThresholdsSchema = z.object({

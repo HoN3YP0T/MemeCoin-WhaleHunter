@@ -5,3 +5,4 @@ dist/
 packages/db/generated/
 .DS_Store
 coverage/
+*.tsbuildinfo

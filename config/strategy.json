@@ -28,8 +28,10 @@
   },
   "tokenThresholds": {
     "maxTokenRiskScore": 55,
-    "minLiquidityUsd": 10000,
-    "minAgeSeconds": 60
+    "minLiquidityUsd": 4000,
+    "minAgeSeconds": 30,
+    "maxAgeSeconds": 21600,
+    "allowedDexes": ["pumpfun", "raydium"]
   },
   "clusterThresholds": {
     "edgeMergeThreshold": 0.5,

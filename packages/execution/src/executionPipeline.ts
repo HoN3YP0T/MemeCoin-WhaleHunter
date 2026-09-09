@@ -85,6 +85,8 @@ export class ExecutionPipeline {
         cluster: input.cluster,
         estimatedSlippagePct,
         riskEngineVeto: riskVeto,
+        dex: input.tradeEvent.dex,
+        tokenAgeSeconds: Math.max(0, input.tradeEvent.blockTime - input.tokenStats.createdAt),
       },
       this.config,
     );
