@@ -10,6 +10,7 @@ async function main(): Promise<void> {
   const { stop } = await startApp(ctx);
 
   ctx.logger.info({}, `health/metrics available at http://localhost:${ctx.env.HEALTH_PORT}/health and /metrics`);
+  ctx.logger.info({}, `dashboard available at http://localhost:${ctx.env.HEALTH_PORT}/ (read-only)`);
   ctx.bus.on("signal.generated", ({ tokenMint, score }) => {
     ctx.logger.info({ tokenMint, score }, "signal generated");
   });

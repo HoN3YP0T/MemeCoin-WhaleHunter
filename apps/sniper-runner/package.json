@@ -6,6 +6,7 @@
   "main": "src/main.ts",
   "dependencies": {
     "@whale-sniper/core": "*",
+    "@whale-sniper/dashboard": "*",
     "@whale-sniper/db": "*",
     "@whale-sniper/feed": "*",
     "@whale-sniper/monitoring": "*",

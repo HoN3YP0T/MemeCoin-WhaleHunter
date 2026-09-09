@@ -11,6 +11,7 @@ import {
   type Logger,
   type StrategyConfig,
 } from "@whale-sniper/core";
+import { RecentEventLog, handleDashboardRequest } from "@whale-sniper/dashboard";
 import { createRepositories, type Repositories, type WatchlistEntry } from "@whale-sniper/db";
 import { FeedManager, HeliusFeedProvider, MockFeedProvider, allScenarios, type ScenarioResult } from "@whale-sniper/feed";
 import { AlertManager, MetricsStore, startHealthServer } from "@whale-sniper/monitoring";
@@ -39,6 +40,7 @@ export interface AppContext {
   telegramBot: TelegramBot;
   alertManager: AlertManager;
   logger: Logger;
+  eventLog: RecentEventLog;
 }
 
 function loadStrategyConfig(): StrategyConfig {
@@ -155,6 +157,12 @@ export async function buildAppContext(): Promise<AppContext> {
     void telegramBot.notify(message);
   });
 
+  // Ring buffer for the dashboard's live signal feed - rejected signals
+  // are never persisted anywhere else (see RecentEventLog's doc comment),
+  // so this subscribes to the same bus events MetricsStore already does.
+  const eventLog = new RecentEventLog();
+  eventLog.start(bus);
+
   return {
     env,
     config,
@@ -167,13 +175,16 @@ export async function buildAppContext(): Promise<AppContext> {
     telegramBot,
     alertManager,
     logger,
+    eventLog,
   };
 }
 
 export async function startApp(ctx: AppContext): Promise<{ stop: () => Promise<void> }> {
   ctx.orchestrator.start();
   await ctx.telegramBot.start();
-  const healthServer = startHealthServer(ctx.env.HEALTH_PORT, ctx.metrics);
+  const healthServer = startHealthServer(ctx.env.HEALTH_PORT, ctx.metrics, (req, res) =>
+    handleDashboardRequest(req, res, { repos: ctx.repos, metrics: ctx.metrics, eventLog: ctx.eventLog }),
+  );
 
   try {
     await ctx.feedManager.start();

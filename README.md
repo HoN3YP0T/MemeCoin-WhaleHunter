@@ -292,6 +292,31 @@ other wallet, and a completed `LiveExecutionAdapter.submitOrder`
 implementation - then set `LIVE_TRADING_ENABLED=true`,
 `HOT_WALLET_KEYPAIR_PATH`, and `HOT_WALLET_MAX_BALANCE_USD` in `.env`.
 
+## Dashboard
+
+`npm run start` also serves a read-only operator dashboard on the same port
+as `/health`/`/metrics` (`http://localhost:3001/` by default, or `/dashboard`
+- see `HEALTH_PORT` in `.env`). It's a plain HTML/CSS/vanilla-JS page
+(`packages/dashboard/src/public`) that polls its own JSON API every 5
+seconds - no build step, no framework, matching the rest of this repo.
+
+What's on it: overview stat tiles (realized PnL, win rate, expectancy,
+profit factor, drawdown, open positions, signal counts, watchlist counts),
+an open-positions table, a trade history table, feed/pipeline health
+(latency percentiles, order counts), a watchlisted-whales table with a
+click-through detail panel (Whale Score breakdown + that wallet's trades),
+whale-discovery candidates awaiting review, and a live signal feed (both
+passed and rejected signals).
+
+It's explicitly **read-only** in this version - there's no approve/reject or
+any other action from the dashboard; that stays in Telegram's existing
+`/approve`, `/reject`, `/candidates` commands. The API it's built on
+(`packages/dashboard`) reuses `buildReport()` from `@whale-sniper/backtest`
+for win-rate/expectancy/profit-factor/drawdown math rather than
+re-implementing it, and adds a small in-process ring buffer
+(`RecentEventLog`) for the signal feed, since rejected signals were never
+persisted anywhere before (only counted).
+
 ## Telegram
 
 `telegram-bot` only starts if `TELEGRAM_BOT_TOKEN` is set; otherwise it's a
