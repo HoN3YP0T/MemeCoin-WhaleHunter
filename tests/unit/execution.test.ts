@@ -10,6 +10,8 @@ function env(overrides: Partial<Record<string, any>> = {}) {
   return {
     DATABASE_URL: "",
     FEED_PROVIDER: "mock" as const,
+    HELIUS_API_KEY: "",
+    TOKEN_DATA_PROVIDER: "mock" as const,
     TELEGRAM_BOT_TOKEN: "",
     TELEGRAM_CHAT_ID: "",
     LIVE_TRADING_ENABLED: false,

@@ -3,6 +3,11 @@ import { z } from "zod";
 const envSchema = z.object({
   DATABASE_URL: z.string().default("postgresql://whale:whale@localhost:5432/whale_sniper?schema=public"),
   FEED_PROVIDER: z.enum(["mock", "helius"]).default("mock"),
+  // Empty by default - no real key exists yet. wiring.ts refuses to select
+  // FEED_PROVIDER=helius when this is unset rather than silently falling
+  // back to the mock feed.
+  HELIUS_API_KEY: z.string().optional().default(""),
+  TOKEN_DATA_PROVIDER: z.enum(["mock", "dexscreener"]).default("mock"),
   TELEGRAM_BOT_TOKEN: z.string().optional().default(""),
   TELEGRAM_CHAT_ID: z.string().optional().default(""),
   LIVE_TRADING_ENABLED: z

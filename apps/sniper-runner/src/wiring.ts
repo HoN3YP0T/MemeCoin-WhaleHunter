@@ -7,14 +7,16 @@ import {
   loadEnv,
   parseStrategyConfig,
   type AppEnv,
+  type IFeedProvider,
   type Logger,
   type StrategyConfig,
 } from "@whale-sniper/core";
 import { createRepositories, type Repositories, type WatchlistEntry } from "@whale-sniper/db";
-import { FeedManager, HeliusFeedProvider, MockFeedProvider, allScenarios } from "@whale-sniper/feed";
+import { FeedManager, HeliusFeedProvider, MockFeedProvider, allScenarios, type ScenarioResult } from "@whale-sniper/feed";
 import { AlertManager, MetricsStore, startHealthServer } from "@whale-sniper/monitoring";
 import { buildOrchestrator, type SniperOrchestrator } from "@whale-sniper/orchestrator";
 import { TelegramBot } from "@whale-sniper/telegram-bot";
+import { DexScreenerTokenMetadataProvider, type ITokenMetadataProvider } from "@whale-sniper/token-intel";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -40,6 +42,28 @@ function loadStrategyConfig(): StrategyConfig {
   return parseStrategyConfig(JSON.parse(raw));
 }
 
+/**
+ * Single choke point for feed provider selection - mirrors the pattern
+ * `selectExecutionAdapterKind()` uses for live trading. `FEED_PROVIDER=helius`
+ * is refused outright (never silently downgraded to mock) when
+ * HELIUS_API_KEY is unset, so a misconfigured deploy fails loudly at boot
+ * instead of quietly running against mock data while believing it's live.
+ */
+function buildFeedProvider(env: AppEnv, scenarios: ScenarioResult[]): IFeedProvider {
+  if (env.FEED_PROVIDER === "helius") {
+    if (!env.HELIUS_API_KEY) {
+      throw new Error(
+        'FEED_PROVIDER=helius requires HELIUS_API_KEY to be set - refusing to start rather than silently falling back to the mock feed. Set HELIUS_API_KEY in .env, or set FEED_PROVIDER=mock.',
+      );
+    }
+    return new HeliusFeedProvider({ apiKey: env.HELIUS_API_KEY });
+  }
+  return new MockFeedProvider(
+    scenarios.flatMap((s) => s.events),
+    { playback: "paced", paceMs: 25 },
+  );
+}
+
 function loadWatchlist(): WatchlistEntry[] {
   const raw = readFileSync(path.join(REPO_ROOT, "config", "watchlist.json"), "utf-8");
   return (JSON.parse(raw) as { wallets: WatchlistEntry[] }).wallets;
@@ -62,16 +86,21 @@ export async function buildAppContext(): Promise<AppContext> {
 
   const scenarios = allScenarios();
   const tokenMetadataOverrides = scenarios.map((s) => ({ tokenMint: s.tokenMint, metadata: s.tokenMetadata }));
+  const tokenMetadataProvider: ITokenMetadataProvider | undefined =
+    env.TOKEN_DATA_PROVIDER === "dexscreener" ? new DexScreenerTokenMetadataProvider() : undefined;
 
-  const built = buildOrchestrator({ bus, clock, config, repos, runtimeFlags, watchlist, tokenMetadataOverrides });
+  const built = buildOrchestrator({
+    bus,
+    clock,
+    config,
+    repos,
+    runtimeFlags,
+    watchlist,
+    tokenMetadataOverrides,
+    tokenMetadataProvider,
+  });
 
-  const feedProvider =
-    env.FEED_PROVIDER === "helius"
-      ? new HeliusFeedProvider()
-      : new MockFeedProvider(
-          scenarios.flatMap((s) => s.events),
-          { playback: "paced", paceMs: 25 },
-        );
+  const feedProvider = buildFeedProvider(env, scenarios);
   const feedManager = new FeedManager(feedProvider, bus, logger);
 
   const telegramBot = new TelegramBot({
@@ -117,7 +146,7 @@ export async function startApp(ctx: AppContext): Promise<{ stop: () => Promise<v
       `feed provider "${ctx.env.FEED_PROVIDER}" failed to start`,
     );
     if (ctx.env.FEED_PROVIDER === "helius") {
-      ctx.logger.warn({}, "HeliusFeedProvider is a stub - set FEED_PROVIDER=mock to run against the mock feed");
+      ctx.logger.warn({}, "HeliusFeedProvider failed to connect - check HELIUS_API_KEY and network access, or set FEED_PROVIDER=mock");
     }
   }
 

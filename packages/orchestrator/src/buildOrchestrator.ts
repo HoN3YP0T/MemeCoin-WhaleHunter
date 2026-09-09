@@ -5,7 +5,12 @@ import type { Repositories, WatchlistEntry } from "@whale-sniper/db";
 import { ExecutionPipeline, PaperExecutionAdapter, RiskEngine, type IExecutionAdapter } from "@whale-sniper/execution";
 import { MetricsStore } from "@whale-sniper/monitoring";
 import { PositionManager } from "@whale-sniper/position-mgmt";
-import { MockTokenMetadataProvider, TokenStatsCollector, type TokenMetadataSeed } from "@whale-sniper/token-intel";
+import {
+  MockTokenMetadataProvider,
+  TokenStatsCollector,
+  type ITokenMetadataProvider,
+  type TokenMetadataSeed,
+} from "@whale-sniper/token-intel";
 import { WalletStatsUpdater, WatchlistIndex } from "@whale-sniper/wallet-intel";
 import { WhaleExitMonitor } from "@whale-sniper/whale-exit";
 import { SniperOrchestrator } from "./SniperOrchestrator.js";
@@ -19,12 +24,17 @@ export interface BuildOrchestratorOptions {
   watchlist: WatchlistEntry[];
   executionAdapter?: IExecutionAdapter;
   tokenMetadataOverrides?: Array<{ tokenMint: string; metadata: TokenMetadataSeed }>;
+  /** Overrides the default MockTokenMetadataProvider - e.g. a
+   * DexScreenerTokenMetadataProvider when TOKEN_DATA_PROVIDER=dexscreener.
+   * When set, `tokenMetadataOverrides` is ignored (it only makes sense for
+   * the mock's deterministic per-mint seeding). */
+  tokenMetadataProvider?: ITokenMetadataProvider;
 }
 
 export interface BuiltOrchestrator {
   orchestrator: SniperOrchestrator;
   metrics: MetricsStore;
-  tokenMetadataProvider: MockTokenMetadataProvider;
+  tokenMetadataProvider: ITokenMetadataProvider;
   relationshipSource: MockWalletRelationshipSource;
   riskEngine: RiskEngine;
 }
@@ -43,9 +53,15 @@ export function buildOrchestrator(options: BuildOrchestratorOptions): BuiltOrche
 
   const walletStatsUpdater = new WalletStatsUpdater(bus, repos.wallet, tokenFirstSeen, ruggedRegistry, clock);
 
-  const tokenMetadataProvider = new MockTokenMetadataProvider();
-  for (const override of options.tokenMetadataOverrides ?? []) {
-    tokenMetadataProvider.setOverride(override.tokenMint, override.metadata);
+  let tokenMetadataProvider: ITokenMetadataProvider;
+  if (options.tokenMetadataProvider) {
+    tokenMetadataProvider = options.tokenMetadataProvider;
+  } else {
+    const mockProvider = new MockTokenMetadataProvider();
+    for (const override of options.tokenMetadataOverrides ?? []) {
+      mockProvider.setOverride(override.tokenMint, override.metadata);
+    }
+    tokenMetadataProvider = mockProvider;
   }
   const tokenStatsCollector = new TokenStatsCollector(bus, repos.token, tokenMetadataProvider, tokenFirstSeen, ruggedRegistry, clock);
 

@@ -7,7 +7,7 @@ import type {
   TokenStats,
 } from "@whale-sniper/core";
 import type { ITokenRepository } from "@whale-sniper/db";
-import type { MockTokenMetadataProvider } from "./mockTokenMetadataProvider.js";
+import type { ITokenMetadataProvider } from "./tokenMetadataProvider.js";
 
 interface WindowedTrade {
   blockTime: number;
@@ -45,7 +45,7 @@ export class TokenStatsCollector {
   constructor(
     private readonly bus: EventBus,
     private readonly repo: ITokenRepository,
-    private readonly metadata: MockTokenMetadataProvider,
+    private readonly metadata: ITokenMetadataProvider,
     private readonly tokenFirstSeen: TokenFirstSeenIndex,
     private readonly ruggedRegistry: RuggedTokenRegistry,
     private readonly clock: Clock,

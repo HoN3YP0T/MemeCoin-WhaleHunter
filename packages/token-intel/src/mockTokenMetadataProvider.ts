@@ -1,11 +1,6 @@
-export interface TokenMetadataSeed {
-  liquidityUsd: number;
-  marketCapUsd: number;
-  holderCount: number;
-  top10HolderPct: number;
-  mintAuthorityRevoked: boolean;
-  freezeAuthorityRevoked: boolean;
-}
+import type { ITokenMetadataProvider, TokenMetadataSeed } from "./tokenMetadataProvider.js";
+
+export type { TokenMetadataSeed };
 
 function deterministicHash(input: string): number {
   let h = 2166136261;
@@ -35,7 +30,7 @@ function defaultMetadataFor(tokenMint: string): TokenMetadataSeed {
  * for a mint via `setOverride`; anything else gets a deterministic
  * pseudo-random profile so behavior is stable across runs.
  */
-export class MockTokenMetadataProvider {
+export class MockTokenMetadataProvider implements ITokenMetadataProvider {
   private overrides = new Map<string, TokenMetadataSeed>();
 
   setOverride(tokenMint: string, metadata: TokenMetadataSeed): void {
