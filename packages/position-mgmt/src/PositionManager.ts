@@ -42,4 +42,25 @@ export class PositionManager {
     }
     return position;
   }
+
+  /** Executes an exit outside the normal price-tick state machine - used by
+   * whale-exit's tiered response (REDUCE/EMERGENCY), which can fire between
+   * ticks based on the triggering whale's own on-chain selling. */
+  async forceExit(
+    position: Position,
+    priceUsd: number,
+    sellFraction: number,
+    liquidityUsd: number,
+    reason: Position["exitReason"],
+  ): Promise<Position> {
+    if (position.status === "CLOSED") return position;
+    applyPaperExit(position, priceUsd, sellFraction, liquidityUsd, this.config, reason);
+    await this.repo.savePosition(position);
+    if (position.status === "CLOSED") {
+      this.bus.emit("position.closed", { positionId: position.positionId, reason: reason ?? "MANUAL" });
+    } else {
+      this.bus.emit("position.updated", { positionId: position.positionId });
+    }
+    return position;
+  }
 }
