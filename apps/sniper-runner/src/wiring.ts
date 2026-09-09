@@ -16,7 +16,11 @@ import { FeedManager, HeliusFeedProvider, MockFeedProvider, allScenarios, type S
 import { AlertManager, MetricsStore, startHealthServer } from "@whale-sniper/monitoring";
 import { buildOrchestrator, type SniperOrchestrator } from "@whale-sniper/orchestrator";
 import { TelegramBot } from "@whale-sniper/telegram-bot";
-import { DexScreenerTokenMetadataProvider, type ITokenMetadataProvider } from "@whale-sniper/token-intel";
+import {
+  DexScreenerTokenMetadataProvider,
+  SolscanTokenMetadataProvider,
+  type ITokenMetadataProvider,
+} from "@whale-sniper/token-intel";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -64,6 +68,31 @@ function buildFeedProvider(env: AppEnv, scenarios: ScenarioResult[]): IFeedProvi
   );
 }
 
+/**
+ * Single choke point for token-data provider selection - mirrors
+ * `buildFeedProvider()`'s fail-fast pattern above. `TOKEN_DATA_PROVIDER=solscan`
+ * is refused outright (never silently downgraded to mock/dexscreener) when
+ * SOLSCAN_API_KEY is unset, so a misconfigured deploy fails loudly at boot
+ * instead of quietly running against a different provider than intended.
+ * Returns undefined for "mock" - buildOrchestrator() falls back to
+ * MockTokenMetadataProvider (with the mock scenarios' deterministic
+ * overrides) in that case, exactly as it always has.
+ */
+function buildTokenMetadataProvider(env: AppEnv): ITokenMetadataProvider | undefined {
+  if (env.TOKEN_DATA_PROVIDER === "solscan") {
+    if (!env.SOLSCAN_API_KEY) {
+      throw new Error(
+        'TOKEN_DATA_PROVIDER=solscan requires SOLSCAN_API_KEY to be set - refusing to start rather than silently falling back to mock/dexscreener data. Set SOLSCAN_API_KEY in .env, or set TOKEN_DATA_PROVIDER=mock or dexscreener.',
+      );
+    }
+    return new SolscanTokenMetadataProvider(env.SOLSCAN_API_KEY);
+  }
+  if (env.TOKEN_DATA_PROVIDER === "dexscreener") {
+    return new DexScreenerTokenMetadataProvider();
+  }
+  return undefined;
+}
+
 function loadWatchlist(): WatchlistEntry[] {
   const raw = readFileSync(path.join(REPO_ROOT, "config", "watchlist.json"), "utf-8");
   return (JSON.parse(raw) as { wallets: WatchlistEntry[] }).wallets;
@@ -86,8 +115,7 @@ export async function buildAppContext(): Promise<AppContext> {
 
   const scenarios = allScenarios();
   const tokenMetadataOverrides = scenarios.map((s) => ({ tokenMint: s.tokenMint, metadata: s.tokenMetadata }));
-  const tokenMetadataProvider: ITokenMetadataProvider | undefined =
-    env.TOKEN_DATA_PROVIDER === "dexscreener" ? new DexScreenerTokenMetadataProvider() : undefined;
+  const tokenMetadataProvider = buildTokenMetadataProvider(env);
 
   const built = buildOrchestrator({
     bus,
@@ -99,6 +127,13 @@ export async function buildAppContext(): Promise<AppContext> {
     tokenMetadataOverrides,
     tokenMetadataProvider,
   });
+
+  // Hydrate creator reputation from persistence before the orchestrator (and
+  // therefore CreatorRegistryUpdater) starts, so reputation built up in a
+  // previous run keeps informing creatorRiskComponent() from the first
+  // trade of this run rather than starting cold every restart.
+  const creatorReputations = await repos.creatorReputation.loadAll();
+  built.creatorRegistry.hydrate(creatorReputations);
 
   const feedProvider = buildFeedProvider(env, scenarios);
   const feedManager = new FeedManager(feedProvider, bus, logger);

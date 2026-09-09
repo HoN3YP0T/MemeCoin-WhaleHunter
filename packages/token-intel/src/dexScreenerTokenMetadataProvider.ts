@@ -1,4 +1,9 @@
-import type { ITokenMetadataProvider, TokenMetadataSeed } from "./tokenMetadataProvider.js";
+import { conservativeUnknownSeed, FetchTokenDataHttpClient, type ITokenMetadataProvider, type TokenDataHttpClient, type TokenMetadataSeed } from "./tokenMetadataProvider.js";
+
+// Re-exported so existing call sites/tests that import these two names from
+// this file (rather than the shared tokenMetadataProvider.ts) keep working
+// unchanged.
+export { FetchTokenDataHttpClient, type TokenDataHttpClient };
 
 /** DexScreener's public token-pairs lookup - no API key required. See
  * https://docs.dexscreener.com/api/reference (GET /latest/dex/tokens/:address). */
@@ -10,31 +15,6 @@ const DEXSCREENER_TOKENS_URL = "https://api.dexscreener.com/latest/dex/tokens/";
 // in, so cache aggressively short-term rather than hitting the API on
 // every call.
 const DEFAULT_CACHE_TTL_MS = 20_000;
-const DEFAULT_TIMEOUT_MS = 5_000;
-
-/** Narrow HTTP seam so tests never make a real network call - default
- * implementation uses Node 22's built-in global `fetch`. */
-export interface TokenDataHttpClient {
-  fetchJson(url: string): Promise<unknown>;
-}
-
-export class FetchTokenDataHttpClient implements TokenDataHttpClient {
-  constructor(private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS) {}
-
-  async fetchJson(url: string): Promise<unknown> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const res = await fetch(url, { headers: { accept: "application/json" }, signal: controller.signal });
-      if (!res.ok) {
-        throw new Error(`DexScreener request failed: ${res.status} ${res.statusText}`);
-      }
-      return (await res.json()) as unknown;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-}
 
 // Shape of the fields this adapter actually reads out of DexScreener's
 // response, per the public docs - deliberately loose/partial (`Partial`,
@@ -53,29 +33,11 @@ interface DexScreenerTokensResponse {
   pairs?: DexScreenerPair[] | null;
 }
 
-/**
- * Conservative fallback for the fields DexScreener cannot provide at all:
- * holder count and top-10 concentration DexScreener simply doesn't expose,
- * and mint/freeze authority state requires an on-chain accounts lookup
- * DexScreener doesn't do either. Unlike `MockTokenMetadataProvider`'s
- * pseudo-random authority flags (fine for deterministic test scenarios),
- * a live risk-scoring fallback must not coin-flip whether a rug vector
- * looks "safe" - authority-revoked is a security signal, and missing data
- * has to read as risky, not safe. Concretely: both authorities default to
- * *not revoked* (the risky end of `authorityRiskComponent`), and holder
- * count/concentration default to worst-case-plausible values rather than a
- * comfortable mid-range guess.
- */
-function conservativeUnknownSeed(): TokenMetadataSeed {
-  return {
-    liquidityUsd: 0,
-    marketCapUsd: 0,
-    holderCount: 0,
-    top10HolderPct: 1,
-    mintAuthorityRevoked: false,
-    freezeAuthorityRevoked: false,
-  };
-}
+// DexScreener cannot provide holder count/top-10 concentration/authority
+// state/creator identity at all - `conservativeUnknownSeed()` (shared with
+// `SolscanTokenMetadataProvider` so the fallback semantics never drift
+// between adapters) is always used for those fields. See its doc comment in
+// tokenMetadataProvider.ts for why missing data reads as risky, not safe.
 
 function pickBestPair(pairs: DexScreenerPair[]): DexScreenerPair | undefined {
   const solanaPairs = pairs.filter((p) => p.chainId === undefined || p.chainId === "solana");

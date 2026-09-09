@@ -28,6 +28,13 @@ export const tokenRiskWeightsSchema = z.object({
   authorityRisk: z.number(),
   buyerDiversityRisk: z.number(),
   flowRisk: z.number(),
+  // Ships at 0 - computed and visible on every TokenRiskScore from day one
+  // (creatorRiskComponent in tokenRiskScoring.ts), but contributes nothing
+  // to riskScore until an operator deliberately rebalances the weights.
+  // Recommended rebalanced split when turning it on: age .20, liquidity
+  // .18, concentration .18, authority .12, buyerDiversity .08, flow .08,
+  // creatorRisk .16 (sums to 1.00).
+  creatorRisk: z.number(),
 });
 
 export const dexNameSchema = z.enum(["raydium", "orca", "pumpfun", "meteora", "jupiter", "unknown"]);

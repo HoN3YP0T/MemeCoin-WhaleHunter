@@ -58,6 +58,10 @@ model Token {
   top10HolderPct       Float    @default(0)
   mintAuthorityRevoked  Boolean  @default(false)
   freezeAuthorityRevoked Boolean @default(false)
+  // Nullable - only populated when TOKEN_DATA_PROVIDER=solscan resolves a
+  // creator for this mint (see SolscanTokenMetadataProvider / TokenStats).
+  creatorAddress        String?
+  creatorTokenLaunchCount Int?
   updatedAt            DateTime @updatedAt
 
   riskScores TokenRiskScoreRow[]
@@ -76,11 +80,19 @@ model TokenRiskScoreRow {
   authorityRisk      Float
   buyerDiversityRisk Float
   flowRisk           Float
+  creatorRisk        Float    @default(0)
   riskScore          Float
   band               String
   computedAt         DateTime @default(now())
 
   @@index([tokenMint])
+}
+
+model CreatorReputation {
+  creatorAddress String   @id
+  tokensCreated  Int      @default(0)
+  tokensRugged   Int      @default(0)
+  updatedAt      DateTime @updatedAt
 }
 
 model Trade {

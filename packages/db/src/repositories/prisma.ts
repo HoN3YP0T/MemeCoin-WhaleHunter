@@ -1,5 +1,6 @@
-import { riskBand, type NormalizedTradeEvent, type Position, type Signal, type TokenRiskScore, type TokenStats, type WalletCluster, type WalletScoreBreakdown, type WalletStats } from "@whale-sniper/core";
+import { riskBand, type CreatorReputation, type NormalizedTradeEvent, type Position, type Signal, type TokenRiskScore, type TokenStats, type WalletCluster, type WalletScoreBreakdown, type WalletStats } from "@whale-sniper/core";
 import type {
+  ICreatorRegistryRepository,
   IClusterRepository,
   IPositionRepository,
   IRiskStateRepository,
@@ -125,6 +126,8 @@ export class PrismaTokenRepository implements ITokenRepository {
         top10HolderPct: stats.top10HolderPct,
         mintAuthorityRevoked: stats.mintAuthorityRevoked,
         freezeAuthorityRevoked: stats.freezeAuthorityRevoked,
+        creatorAddress: stats.creatorAddress,
+        creatorTokenLaunchCount: stats.creatorTokenLaunchCount,
       },
       update: {
         liquidityUsd: stats.liquidityUsd,
@@ -133,6 +136,8 @@ export class PrismaTokenRepository implements ITokenRepository {
         top10HolderPct: stats.top10HolderPct,
         mintAuthorityRevoked: stats.mintAuthorityRevoked,
         freezeAuthorityRevoked: stats.freezeAuthorityRevoked,
+        creatorAddress: stats.creatorAddress,
+        creatorTokenLaunchCount: stats.creatorTokenLaunchCount,
       },
     });
   }
@@ -149,6 +154,8 @@ export class PrismaTokenRepository implements ITokenRepository {
       top10HolderPct: row.top10HolderPct,
       mintAuthorityRevoked: row.mintAuthorityRevoked,
       freezeAuthorityRevoked: row.freezeAuthorityRevoked,
+      creatorAddress: row.creatorAddress ?? undefined,
+      creatorTokenLaunchCount: row.creatorTokenLaunchCount ?? undefined,
       uniqueBuyers1h: 0,
       uniqueSellers1h: 0,
       buyVolumeUsd5m: 0,
@@ -169,6 +176,7 @@ export class PrismaTokenRepository implements ITokenRepository {
         authorityRisk: score.authorityRisk,
         buyerDiversityRisk: score.buyerDiversityRisk,
         flowRisk: score.flowRisk,
+        creatorRisk: score.creatorRisk,
         riskScore: score.riskScore,
         band: score.band,
       },
@@ -189,10 +197,40 @@ export class PrismaTokenRepository implements ITokenRepository {
       authorityRisk: row.authorityRisk,
       buyerDiversityRisk: row.buyerDiversityRisk,
       flowRisk: row.flowRisk,
+      creatorRisk: row.creatorRisk ?? 0,
       riskScore: row.riskScore,
       band: riskBand(row.riskScore),
       computedAt: row.computedAt.getTime(),
     };
+  }
+}
+
+export class PrismaCreatorRegistryRepository implements ICreatorRegistryRepository {
+  constructor(private readonly prisma: any) {}
+
+  async upsertReputation(reputation: CreatorReputation): Promise<void> {
+    await this.prisma.creatorReputation.upsert({
+      where: { creatorAddress: reputation.creatorAddress },
+      create: {
+        creatorAddress: reputation.creatorAddress,
+        tokensCreated: reputation.tokensCreated,
+        tokensRugged: reputation.tokensRugged,
+      },
+      update: {
+        tokensCreated: reputation.tokensCreated,
+        tokensRugged: reputation.tokensRugged,
+      },
+    });
+  }
+
+  async loadAll(): Promise<CreatorReputation[]> {
+    const rows = await this.prisma.creatorReputation.findMany();
+    return rows.map((row: any) => ({
+      creatorAddress: row.creatorAddress,
+      tokensCreated: row.tokensCreated,
+      tokensRugged: row.tokensRugged,
+      updatedAt: row.updatedAt.getTime(),
+    }));
   }
 }
 
@@ -466,5 +504,6 @@ export function createPrismaRepositories(prisma: any): Repositories {
     position: new PrismaPositionRepository(prisma),
     watchlist: new PrismaWatchlistRepository(prisma),
     riskState: new PrismaRiskStateRepository(prisma),
+    creatorReputation: new PrismaCreatorRegistryRepository(prisma),
   };
 }

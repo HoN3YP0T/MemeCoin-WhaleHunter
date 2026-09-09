@@ -12,6 +12,7 @@ function env(overrides: Partial<Record<string, any>> = {}) {
     FEED_PROVIDER: "mock" as const,
     HELIUS_API_KEY: "",
     TOKEN_DATA_PROVIDER: "mock" as const,
+    SOLSCAN_API_KEY: "",
     TELEGRAM_BOT_TOKEN: "",
     TELEGRAM_CHAT_ID: "",
     LIVE_TRADING_ENABLED: false,

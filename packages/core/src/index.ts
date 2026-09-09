@@ -14,4 +14,5 @@ export * from "./runtimeFlags.js";
 export * from "./ids.js";
 export * from "./tokenFirstSeenIndex.js";
 export * from "./ruggedTokenRegistry.js";
+export * from "./creatorRegistry.js";
 export * from "./latency.js";

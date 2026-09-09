@@ -7,7 +7,12 @@ const envSchema = z.object({
   // FEED_PROVIDER=helius when this is unset rather than silently falling
   // back to the mock feed.
   HELIUS_API_KEY: z.string().optional().default(""),
-  TOKEN_DATA_PROVIDER: z.enum(["mock", "dexscreener"]).default("mock"),
+  TOKEN_DATA_PROVIDER: z.enum(["mock", "dexscreener", "solscan"]).default("mock"),
+  // Empty by default - no real key exists yet. wiring.ts's
+  // buildTokenMetadataProvider() refuses to select TOKEN_DATA_PROVIDER=solscan
+  // when this is unset rather than silently falling back to mock/dexscreener,
+  // mirroring HELIUS_API_KEY's fail-fast contract above.
+  SOLSCAN_API_KEY: z.string().optional().default(""),
   TELEGRAM_BOT_TOKEN: z.string().optional().default(""),
   TELEGRAM_CHAT_ID: z.string().optional().default(""),
   LIVE_TRADING_ENABLED: z

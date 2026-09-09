@@ -1,4 +1,5 @@
 import type {
+  CreatorReputation,
   NormalizedTradeEvent,
   Position,
   Signal,
@@ -73,6 +74,13 @@ export interface IRiskStateRepository {
   update(partial: Partial<RiskState>): Promise<RiskState>;
 }
 
+/** Persists `CreatorRegistry`'s reputation map so it survives restarts -
+ * hydrated at boot, upserted on every observed/rugged update. */
+export interface ICreatorRegistryRepository {
+  upsertReputation(reputation: CreatorReputation): Promise<void>;
+  loadAll(): Promise<CreatorReputation[]>;
+}
+
 export interface Repositories {
   wallet: IWalletRepository;
   token: ITokenRepository;
@@ -82,4 +90,5 @@ export interface Repositories {
   position: IPositionRepository;
   watchlist: IWatchlistRepository;
   riskState: IRiskStateRepository;
+  creatorReputation: ICreatorRegistryRepository;
 }

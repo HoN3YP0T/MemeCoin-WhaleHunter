@@ -1,4 +1,4 @@
-import { riskBand, type StrategyConfig, type TokenRiskScore, type TokenStats } from "@whale-sniper/core";
+import { riskBand, type CreatorReputation, type StrategyConfig, type TokenRiskScore, type TokenStats } from "@whale-sniper/core";
 
 const MATURE_AGE_SECONDS = 24 * 60 * 60;
 const TARGET_LIQUIDITY_USD = 100_000;
@@ -37,7 +37,62 @@ export function flowRiskComponent(stats: TokenStats): number {
   return clamp01(stats.sellVolumeUsd5m / total);
 }
 
-export function scoreTokenRisk(stats: TokenStats, config: StrategyConfig, atUnixSeconds: number): TokenRiskScore {
+// Serial-deployer signal saturates around 10 prior launches: a first-time
+// creator (creatorTokenLaunchCount === 1) contributes 0, ramping linearly
+// to 1 at 10 launches. Undefined (unknown - mock/DexScreener, or Solscan
+// hasn't resolved a creator yet) also contributes 0 - see the field comment
+// on `TokenMetadataSeed.creatorTokenLaunchCount` for why "unknown" must
+// read as neutral here, unlike the other four token-metadata fields'
+// conservative-risky fallback.
+const SERIAL_DEPLOYER_SATURATION_LAUNCHES = 10;
+// Confidence-shrinkage saturation point for the self-learned rug rate,
+// mirroring walletScoring.ts's sampleConfidence() pattern (there:
+// CONFIDENCE_SATURATION_TRADES = 30 trades) - here a creator's rug rate is
+// only trusted at full weight once we've personally observed 5 of their
+// tokens; a 1-token sample (rugged or not) barely moves creatorRisk.
+const CREATOR_RUG_RATE_CONFIDENCE_SATURATION = 5;
+
+/**
+ * Blends two independent creator-identity risk signals into one 0-1 value:
+ *
+ * 1. Solscan's `creatorTokenLaunchCount` (serial-deployer signal) - a
+ *    creator who has launched many tokens before is more likely running a
+ *    farm than a single legitimate project.
+ * 2. This bot's own self-learned rug rate for that creator
+ *    (`CreatorReputation.tokensRugged / tokensCreated`, built purely from
+ *    `RuggedTokenRegistry`'s existing, unmodified liquidity-crash
+ *    detection via `CreatorRegistryUpdater`), confidence-shrunk by how many
+ *    of that creator's tokens we've actually observed - the same idea
+ *    `walletScoring.ts`'s Bayesian/confidence shrinkage uses to stop a
+ *    thin sample from dominating a score.
+ *
+ * Returns exactly 0 when there is no data at all (no `creatorReputation`
+ * and no `stats.creatorTokenLaunchCount`) - this must never contribute risk
+ * out of thin air, since `tokenRiskWeights.creatorRisk` ships at 0 and an
+ * operator turning it on for the first time should see it react to real
+ * signal, not synthesize risk for tokens Solscan/CreatorRegistry simply
+ * haven't covered yet.
+ */
+export function creatorRiskComponent(stats: TokenStats, creatorReputation?: CreatorReputation): number {
+  const launchCount = stats.creatorTokenLaunchCount;
+  const serialDeployerSignal =
+    launchCount === undefined ? 0 : clamp01((launchCount - 1) / SERIAL_DEPLOYER_SATURATION_LAUNCHES);
+
+  const tokensCreated = creatorReputation?.tokensCreated ?? 0;
+  const tokensRugged = creatorReputation?.tokensRugged ?? 0;
+  const rawRugRate = tokensCreated > 0 ? tokensRugged / tokensCreated : 0;
+  const confidence = clamp01(tokensCreated / CREATOR_RUG_RATE_CONFIDENCE_SATURATION);
+  const shrunkRugRate = rawRugRate * confidence;
+
+  return clamp01(0.5 * serialDeployerSignal + 0.5 * shrunkRugRate);
+}
+
+export function scoreTokenRisk(
+  stats: TokenStats,
+  config: StrategyConfig,
+  atUnixSeconds: number,
+  creatorReputation?: CreatorReputation,
+): TokenRiskScore {
   const w = config.tokenRiskWeights;
   const ageRisk = ageRiskComponent(stats, atUnixSeconds);
   const liquidityRisk = liquidityRiskComponent(stats);
@@ -45,6 +100,7 @@ export function scoreTokenRisk(stats: TokenStats, config: StrategyConfig, atUnix
   const authorityRisk = authorityRiskComponent(stats);
   const buyerDiversityRisk = buyerDiversityRiskComponent(stats);
   const flowRisk = flowRiskComponent(stats);
+  const creatorRisk = creatorRiskComponent(stats, creatorReputation);
 
   const riskScore =
     100 *
@@ -53,7 +109,8 @@ export function scoreTokenRisk(stats: TokenStats, config: StrategyConfig, atUnix
       w.concentrationRisk * concentrationRisk +
       w.authorityRisk * authorityRisk +
       w.buyerDiversityRisk * buyerDiversityRisk +
-      w.flowRisk * flowRisk);
+      w.flowRisk * flowRisk +
+      w.creatorRisk * creatorRisk);
 
   return {
     tokenMint: stats.tokenMint,
@@ -63,6 +120,7 @@ export function scoreTokenRisk(stats: TokenStats, config: StrategyConfig, atUnix
     authorityRisk,
     buyerDiversityRisk,
     flowRisk,
+    creatorRisk,
     riskScore,
     band: riskBand(riskScore),
     computedAt: Date.now(),

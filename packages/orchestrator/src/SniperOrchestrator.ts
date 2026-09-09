@@ -1,5 +1,6 @@
 import {
   type Clock,
+  type CreatorRegistry,
   type EventBus,
   type NormalizedTradeEvent,
   type Position,
@@ -13,7 +14,7 @@ import type { ExecutionPipeline } from "@whale-sniper/execution";
 import type { MetricsStore } from "@whale-sniper/monitoring";
 import type { PositionManager } from "@whale-sniper/position-mgmt";
 import { computeSignal } from "@whale-sniper/signal-engine";
-import type { TokenStatsCollector } from "@whale-sniper/token-intel";
+import type { CreatorRegistryUpdater, TokenStatsCollector } from "@whale-sniper/token-intel";
 import { scoreTokenRisk } from "@whale-sniper/token-intel";
 import { scoreWallet, type WalletStatsUpdater, type WatchlistIndex } from "@whale-sniper/wallet-intel";
 import type { WhaleExitMonitor } from "@whale-sniper/whale-exit";
@@ -33,6 +34,8 @@ export interface OrchestratorDeps {
   positionManager: PositionManager;
   whaleExitMonitor: WhaleExitMonitor;
   metrics: MetricsStore;
+  creatorRegistry: CreatorRegistry;
+  creatorRegistryUpdater: CreatorRegistryUpdater;
 }
 
 /**
@@ -52,6 +55,7 @@ export class SniperOrchestrator {
     this.unsubscribers.push(
       this.deps.walletStatsUpdater.start(),
       this.deps.tokenStatsCollector.start(),
+      this.deps.creatorRegistryUpdater.start(),
       this.deps.clusterDetector.start(),
       this.deps.whaleExitMonitor.start(),
       this.deps.metrics.start(this.deps.bus),
@@ -124,7 +128,10 @@ export class SniperOrchestrator {
     event.timestamps.scoredAt = this.deps.clock.now();
     const walletScore = scoreWallet(walletStats, this.deps.config);
     await this.deps.repos.wallet.upsertScore(walletScore);
-    const tokenRisk = scoreTokenRisk(tokenStats, this.deps.config, event.blockTime);
+    const creatorReputation = tokenStats.creatorAddress
+      ? this.deps.creatorRegistry.getReputation(tokenStats.creatorAddress)
+      : undefined;
+    const tokenRisk = scoreTokenRisk(tokenStats, this.deps.config, event.blockTime, creatorReputation);
     await this.deps.repos.token.upsertRiskScore(tokenRisk);
 
     this.deps.bus.emit("whale.detected", {

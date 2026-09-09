@@ -24,7 +24,8 @@
     "concentrationRisk": 0.2,
     "authorityRisk": 0.15,
     "buyerDiversityRisk": 0.1,
-    "flowRisk": 0.1
+    "flowRisk": 0.1,
+    "creatorRisk": 0
   },
   "tokenThresholds": {
     "maxTokenRiskScore": 55,

@@ -1,4 +1,5 @@
 import type {
+  CreatorReputation,
   NormalizedTradeEvent,
   Position,
   Signal,
@@ -9,6 +10,7 @@ import type {
   WalletStats,
 } from "@whale-sniper/core";
 import type {
+  ICreatorRegistryRepository,
   IClusterRepository,
   IPositionRepository,
   IRiskStateRepository,
@@ -143,6 +145,16 @@ export class InMemoryRiskStateRepository implements IRiskStateRepository {
   }
 }
 
+export class InMemoryCreatorRegistryRepository implements ICreatorRegistryRepository {
+  private reputations = new Map<string, CreatorReputation>();
+  async upsertReputation(reputation: CreatorReputation): Promise<void> {
+    this.reputations.set(reputation.creatorAddress, reputation);
+  }
+  async loadAll(): Promise<CreatorReputation[]> {
+    return [...this.reputations.values()];
+  }
+}
+
 export function createInMemoryRepositories(): Repositories {
   return {
     wallet: new InMemoryWalletRepository(),
@@ -153,5 +165,6 @@ export function createInMemoryRepositories(): Repositories {
     position: new InMemoryPositionRepository(),
     watchlist: new InMemoryWatchlistRepository(),
     riskState: new InMemoryRiskStateRepository(),
+    creatorReputation: new InMemoryCreatorRegistryRepository(),
   };
 }

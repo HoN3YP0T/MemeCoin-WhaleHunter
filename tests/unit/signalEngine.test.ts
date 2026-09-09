@@ -31,6 +31,7 @@ function goodTokenRisk(): TokenRiskScore {
     authorityRisk: 0,
     buyerDiversityRisk: 0.1,
     flowRisk: 0.1,
+    creatorRisk: 0,
     riskScore: 15,
     band: "very-low",
     computedAt: Date.now(),
@@ -86,7 +87,8 @@ describe("strategy config weights", () => {
 
   it("token risk weights sum to 1", () => {
     const w = config.tokenRiskWeights;
-    const sum = w.ageRisk + w.liquidityRisk + w.concentrationRisk + w.authorityRisk + w.buyerDiversityRisk + w.flowRisk;
+    const sum =
+      w.ageRisk + w.liquidityRisk + w.concentrationRisk + w.authorityRisk + w.buyerDiversityRisk + w.flowRisk + w.creatorRisk;
     expect(sum).toBeCloseTo(1, 5);
   });
 });

@@ -1,11 +1,12 @@
 import type { Clock, EventBus, RuntimeFlags, StrategyConfig } from "@whale-sniper/core";
-import { RuggedTokenRegistry, TokenFirstSeenIndex } from "@whale-sniper/core";
+import { CreatorRegistry, RuggedTokenRegistry, TokenFirstSeenIndex } from "@whale-sniper/core";
 import { ClusterDetector, MockWalletRelationshipSource } from "@whale-sniper/cluster-detect";
 import type { Repositories, WatchlistEntry } from "@whale-sniper/db";
 import { ExecutionPipeline, PaperExecutionAdapter, RiskEngine, type IExecutionAdapter } from "@whale-sniper/execution";
 import { MetricsStore } from "@whale-sniper/monitoring";
 import { PositionManager } from "@whale-sniper/position-mgmt";
 import {
+  CreatorRegistryUpdater,
   MockTokenMetadataProvider,
   TokenStatsCollector,
   type ITokenMetadataProvider,
@@ -37,6 +38,10 @@ export interface BuiltOrchestrator {
   tokenMetadataProvider: ITokenMetadataProvider;
   relationshipSource: MockWalletRelationshipSource;
   riskEngine: RiskEngine;
+  /** Exposed so the composition root (wiring.ts) can hydrate it from
+   * `repos.creatorReputation` at boot, before `orchestrator.start()` is
+   * called - see buildAppContext(). */
+  creatorRegistry: CreatorRegistry;
 }
 
 /** Single place that assembles every sub-package into a SniperOrchestrator.
@@ -65,6 +70,9 @@ export function buildOrchestrator(options: BuildOrchestratorOptions): BuiltOrche
   }
   const tokenStatsCollector = new TokenStatsCollector(bus, repos.token, tokenMetadataProvider, tokenFirstSeen, ruggedRegistry, clock);
 
+  const creatorRegistry = new CreatorRegistry();
+  const creatorRegistryUpdater = new CreatorRegistryUpdater(bus, repos.token, creatorRegistry, ruggedRegistry, repos.creatorReputation);
+
   const relationshipSource = new MockWalletRelationshipSource();
   const clusterDetector = new ClusterDetector(bus, repos.cluster, repos.token, relationshipSource, ruggedRegistry, config);
 
@@ -92,7 +100,9 @@ export function buildOrchestrator(options: BuildOrchestratorOptions): BuiltOrche
     positionManager,
     whaleExitMonitor,
     metrics,
+    creatorRegistry,
+    creatorRegistryUpdater,
   });
 
-  return { orchestrator, metrics, tokenMetadataProvider, relationshipSource, riskEngine };
+  return { orchestrator, metrics, tokenMetadataProvider, relationshipSource, riskEngine, creatorRegistry };
 }
