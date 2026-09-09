@@ -56,7 +56,10 @@ export class PositionManager {
     if (position.status === "CLOSED") return position;
     applyPaperExit(position, priceUsd, sellFraction, liquidityUsd, this.config, reason);
     await this.repo.savePosition(position);
-    if (position.status === "CLOSED") {
+    // applyPaperExit may have just flipped status to CLOSED via mutation,
+    // which TS can't see through the call above - compare through `string`
+    // so the check isn't (incorrectly) narrowed away by the early return.
+    if ((position.status as string) === "CLOSED") {
       this.bus.emit("position.closed", { positionId: position.positionId, reason: reason ?? "MANUAL" });
     } else {
       this.bus.emit("position.updated", { positionId: position.positionId });
