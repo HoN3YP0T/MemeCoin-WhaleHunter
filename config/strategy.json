@@ -1,0 +1,90 @@
+{
+  "walletGate": {
+    "minTradeCount": 15,
+    "minWinRate": 0.45,
+    "minRealizedPnlUsd": 5000,
+    "minAvgRoiPct": 25,
+    "minWhaleBuySizeUsd": 2000,
+    "maxDrawdownPct": 60,
+    "minEarlyEntryFrequency": 0.3,
+    "maxRugExposureCount": 3,
+    "minWhaleScore": 60
+  },
+  "walletScoreWeights": {
+    "consistency": 0.25,
+    "timing": 0.2,
+    "selectivity": 0.15,
+    "exitQuality": 0.2,
+    "rugAvoidance": 0.1,
+    "recentPerformance": 0.1
+  },
+  "tokenRiskWeights": {
+    "ageRisk": 0.25,
+    "liquidityRisk": 0.2,
+    "concentrationRisk": 0.2,
+    "authorityRisk": 0.15,
+    "buyerDiversityRisk": 0.1,
+    "flowRisk": 0.1
+  },
+  "tokenThresholds": {
+    "maxTokenRiskScore": 55,
+    "minLiquidityUsd": 10000,
+    "minAgeSeconds": 60
+  },
+  "clusterThresholds": {
+    "edgeMergeThreshold": 0.5,
+    "manipulationPenaltyCap": 100
+  },
+  "signalWeights": {
+    "whaleQuality": 0.3,
+    "tokenQuality": 0.2,
+    "liquidity": 0.15,
+    "buyingMomentum": 0.1,
+    "independentBuyers": 0.1,
+    "earlyEntryQuality": 0.1,
+    "manipulationPenalty": 0.05
+  },
+  "entryGate": {
+    "minSignalScore": 65,
+    "minIndependentBuyers": 3,
+    "minBuyingMomentumUsd5m": 1000,
+    "maxSlippagePct": 5
+  },
+  "position": {
+    "takeProfitLadder": [
+      { "triggerPct": 25, "sellFraction": 0.2 },
+      { "triggerPct": 50, "sellFraction": 0.2 },
+      { "triggerPct": 100, "sellFraction": 0.25 }
+    ],
+    "trailingActivationPct": 30,
+    "trailingTrailPct": 15,
+    "initialStopLossPct": 20,
+    "maxHoldTimeSeconds": 21600
+  },
+  "whaleExit": {
+    "warnThresholdPct": 0.1,
+    "reduceThresholdPct": 0.3,
+    "emergencyThresholdPct": 0.6,
+    "reduceSellFraction": 0.5,
+    "liquidityDeteriorationPct": 0.3,
+    "volumeReversalRatio": 2.0
+  },
+  "risk": {
+    "maxTradeSizeUsd": 1000,
+    "maxDailyLossUsd": 2000,
+    "maxOpenPositions": 5,
+    "maxTotalExposureUsd": 5000,
+    "maxPerTokenExposureUsd": 1000,
+    "maxPerClusterExposureUsd": 1500,
+    "maxSlippagePct": 5,
+    "maxTxCostUsd": 20,
+    "maxConsecutiveLosses": 4,
+    "cooldownSecondsAfterLoss": 300
+  },
+  "execution": {
+    "baseSlippagePct": 0.3,
+    "slippageSizeImpactK": 0.5,
+    "dexFeePct": 0.25,
+    "mockGasUsd": 0.15
+  }
+}

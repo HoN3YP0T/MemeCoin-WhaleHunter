@@ -1,0 +1,31 @@
+{
+  "name": "whale-sniper",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Solana memecoin whale-entry sniper trading engine",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "tsx apps/sniper-runner/src/main.ts",
+    "backtest": "tsx scripts/run-backtest.ts",
+    "seed:watchlist": "tsx scripts/seed-watchlist.ts",
+    "typecheck": "tsc -b tsconfig.base.json --noEmit || true",
+    "db:generate": "prisma generate --schema packages/db/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --name init --schema packages/db/prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

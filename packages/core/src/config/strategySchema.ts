@@ -1,0 +1,121 @@
+import { z } from "zod";
+
+export const walletGateSchema = z.object({
+  minTradeCount: z.number().positive(),
+  minWinRate: z.number().min(0).max(1),
+  minRealizedPnlUsd: z.number(),
+  minAvgRoiPct: z.number(),
+  minWhaleBuySizeUsd: z.number().positive(),
+  maxDrawdownPct: z.number().positive(),
+  minEarlyEntryFrequency: z.number().min(0).max(1),
+  maxRugExposureCount: z.number().int().nonnegative(),
+  minWhaleScore: z.number().min(0).max(100),
+});
+
+export const walletScoreWeightsSchema = z.object({
+  consistency: z.number(),
+  timing: z.number(),
+  selectivity: z.number(),
+  exitQuality: z.number(),
+  rugAvoidance: z.number(),
+  recentPerformance: z.number(),
+});
+
+export const tokenRiskWeightsSchema = z.object({
+  ageRisk: z.number(),
+  liquidityRisk: z.number(),
+  concentrationRisk: z.number(),
+  authorityRisk: z.number(),
+  buyerDiversityRisk: z.number(),
+  flowRisk: z.number(),
+});
+
+export const tokenThresholdsSchema = z.object({
+  maxTokenRiskScore: z.number().min(0).max(100),
+  minLiquidityUsd: z.number().positive(),
+  minAgeSeconds: z.number().nonnegative(),
+});
+
+export const clusterThresholdsSchema = z.object({
+  edgeMergeThreshold: z.number().min(0).max(1),
+  manipulationPenaltyCap: z.number().min(0).max(100),
+});
+
+export const signalWeightsSchema = z.object({
+  whaleQuality: z.number(),
+  tokenQuality: z.number(),
+  liquidity: z.number(),
+  buyingMomentum: z.number(),
+  independentBuyers: z.number(),
+  earlyEntryQuality: z.number(),
+  manipulationPenalty: z.number(),
+});
+
+export const entryGateSchema = z.object({
+  minSignalScore: z.number().min(0).max(100),
+  minIndependentBuyers: z.number().int().nonnegative(),
+  minBuyingMomentumUsd5m: z.number().nonnegative(),
+  maxSlippagePct: z.number().positive(),
+});
+
+export const positionSchema = z.object({
+  takeProfitLadder: z.array(
+    z.object({
+      triggerPct: z.number().positive(),
+      sellFraction: z.number().positive().max(1),
+    }),
+  ),
+  trailingActivationPct: z.number().positive(),
+  trailingTrailPct: z.number().positive(),
+  initialStopLossPct: z.number().positive(),
+  maxHoldTimeSeconds: z.number().positive(),
+});
+
+export const whaleExitSchema = z.object({
+  warnThresholdPct: z.number().min(0).max(1),
+  reduceThresholdPct: z.number().min(0).max(1),
+  emergencyThresholdPct: z.number().min(0).max(1),
+  reduceSellFraction: z.number().min(0).max(1),
+  liquidityDeteriorationPct: z.number().min(0).max(1),
+  volumeReversalRatio: z.number().positive(),
+});
+
+export const riskSchema = z.object({
+  maxTradeSizeUsd: z.number().positive(),
+  maxDailyLossUsd: z.number().positive(),
+  maxOpenPositions: z.number().int().positive(),
+  maxTotalExposureUsd: z.number().positive(),
+  maxPerTokenExposureUsd: z.number().positive(),
+  maxPerClusterExposureUsd: z.number().positive(),
+  maxSlippagePct: z.number().positive(),
+  maxTxCostUsd: z.number().positive(),
+  maxConsecutiveLosses: z.number().int().positive(),
+  cooldownSecondsAfterLoss: z.number().nonnegative(),
+});
+
+export const executionSchema = z.object({
+  baseSlippagePct: z.number().nonnegative(),
+  slippageSizeImpactK: z.number().nonnegative(),
+  dexFeePct: z.number().nonnegative(),
+  mockGasUsd: z.number().nonnegative(),
+});
+
+export const strategyConfigSchema = z.object({
+  walletGate: walletGateSchema,
+  walletScoreWeights: walletScoreWeightsSchema,
+  tokenRiskWeights: tokenRiskWeightsSchema,
+  tokenThresholds: tokenThresholdsSchema,
+  clusterThresholds: clusterThresholdsSchema,
+  signalWeights: signalWeightsSchema,
+  entryGate: entryGateSchema,
+  position: positionSchema,
+  whaleExit: whaleExitSchema,
+  risk: riskSchema,
+  execution: executionSchema,
+});
+
+export type StrategyConfig = z.infer<typeof strategyConfigSchema>;
+
+export function parseStrategyConfig(raw: unknown): StrategyConfig {
+  return strategyConfigSchema.parse(raw);
+}

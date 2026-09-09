@@ -1,0 +1,19 @@
+{
+  "wallets": [
+    {
+      "address": "WhaLe1QcuratedGoodTraderAddress11111111111",
+      "label": "curated-whale-1",
+      "notes": "Consistent early entries, disciplined exits"
+    },
+    {
+      "address": "WhaLe2QcuratedGoodTraderAddress22222222222",
+      "label": "curated-whale-2",
+      "notes": "High win rate, moderate size"
+    },
+    {
+      "address": "WhaLe3QcuratedGoodTraderAddress33333333333",
+      "label": "curated-whale-3",
+      "notes": "Large size, strong ROI history"
+    }
+  ]
+}
