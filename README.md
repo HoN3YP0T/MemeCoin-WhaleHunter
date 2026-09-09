@@ -43,9 +43,11 @@ packages/
                    logger, real/simulated Clock, latency helpers
   db              Prisma schema + repositories (in-memory and Prisma-backed)
   feed            IFeedProvider, MockFeedProvider + scenario generators,
-                   stub HeliusFeedProvider, tx decoder, FeedManager
+                   real HeliusFeedProvider (pump.fun, opt-in), tx decoder,
+                   FeedManager
   wallet-intel    watchlist loader, walletStatsUpdater, walletScoring.ts
-  token-intel     mocked token stats/metadata collector, tokenRiskScoring.ts
+  token-intel     token stats/metadata collector (mock or real
+                   DexScreener adapter, opt-in), tokenRiskScoring.ts
   cluster-detect  wallet relationship graph, union-find clustering, flags
   signal-engine   composite signal score, entryGate.ts
   paper-trading   fill simulator, paper trade engine
@@ -122,6 +124,49 @@ per-stage latencies that `monitoring` aggregates.
 All thresholds and weights live in `config/strategy.json`, zod-validated at
 boot, and are what `backtest`'s parameter sweep recalibrates.
 
+`tokenThresholds.allowedDexes` gates which venue the triggering trade
+happened on - it includes both `"pumpfun"` and `"raydium"` by default,
+since the same token trades on pump.fun's own bonding curve pre-migration
+and on Raydium once it clears pump.fun's ~$69k migration market cap; both
+are legitimate places to catch a whale entry over a token's lifecycle.
+`minLiquidityUsd` (4000) and `minAgeSeconds` (30) are tuned for pump.fun's
+actual launch profile - fresh launches routinely start with low-thousands
+liquidity and are tradeable within seconds, so the higher defaults this
+scaffold shipped with originally would reject almost everything on that
+venue. `maxAgeSeconds` (21600, 6h) is a new upper bound: a whale *entry*
+sniper should be catching fresh discovery, not opening a position hours
+into an already-mature pump.
+
+## Real integrations
+
+Both of these are fully implemented, not stubs, and both are off by
+default - nothing about the mock-feed/mock-token-stats path above changes
+unless you explicitly opt in.
+
+**DexScreener token data** (`TOKEN_DATA_PROVIDER=dexscreener` in `.env`) -
+`DexScreenerTokenMetadataProvider` (`packages/token-intel`) calls
+DexScreener's free, no-API-key public API for a token's liquidity and
+market cap, short-TTL cached per mint so the hot trade path never blocks
+on network I/O. DexScreener has no holder count, concentration, or
+mint/freeze authority data, so those fields fall back to conservative
+"treat as risky" defaults (authorities read as *not revoked*) rather than
+a guess - see the comment on `conservativeUnknownSeed` in that file. No
+env var is required beyond the flag itself; DexScreener needs no key.
+
+**Helius live feed** (`FEED_PROVIDER=helius` in `.env`, plus
+`HELIUS_API_KEY`) - `HeliusFeedProvider` (`packages/feed`) subscribes to
+real pump.fun buy/sell activity over Helius's RPC/WS using
+`Connection.onLogs` against pump.fun's bonding-curve program, and decodes
+the on-chain `TradeEvent` logs into the same `NormalizedTradeEvent` shape
+the mock feed produces. If `FEED_PROVIDER=helius` is set and
+`HELIUS_API_KEY` is empty, the app refuses to start (`wiring.ts`'s
+`buildFeedProvider()`) rather than silently falling back to the mock feed.
+Get a key at https://helius.dev. See `HeliusFeedProvider.ts` and
+`pumpFunDecoder.ts` for the documented judgment calls this integration
+makes without a live key to verify against (which subscription approach
+was used and why, the trade-event byte layout, and the lack of a live
+SOL/USD price oracle).
+
 ## Live trading
 
 `LIVE_TRADING_ENABLED=false` by default in `.env.example`. The execution
@@ -134,12 +179,13 @@ point for that decision. Even when constructible, `LiveExecutionAdapter`'s
 on-chain submission require a real wallet/RPC integration that is
 intentionally out of scope here.
 
-To eventually enable live trading you would need: a real feed provider
-(implement `IFeedProvider` the way `HeliusFeedProvider`'s stub is shaped),
-a funded, dedicated hot wallet kept separate from any other wallet, and a
-completed `LiveExecutionAdapter.submitOrder` implementation - then set
-`LIVE_TRADING_ENABLED=true`, `HOT_WALLET_KEYPAIR_PATH`, and
-`HOT_WALLET_MAX_BALANCE_USD` in `.env`.
+To eventually enable live trading you would need: a real feed provider (see
+"Real integrations" above - `HeliusFeedProvider` is a complete
+implementation now, just gated behind `FEED_PROVIDER=helius` +
+`HELIUS_API_KEY`), a funded, dedicated hot wallet kept separate from any
+other wallet, and a completed `LiveExecutionAdapter.submitOrder`
+implementation - then set `LIVE_TRADING_ENABLED=true`,
+`HOT_WALLET_KEYPAIR_PATH`, and `HOT_WALLET_MAX_BALANCE_USD` in `.env`.
 
 ## Telegram
 
