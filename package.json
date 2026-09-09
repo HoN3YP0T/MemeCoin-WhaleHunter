@@ -19,7 +19,8 @@
     "seed:watchlist": "tsx scripts/seed-watchlist.ts",
     "typecheck": "tsc -b tsconfig.base.json --noEmit || true",
     "db:generate": "prisma generate --schema packages/db/prisma/schema.prisma",
-    "db:migrate": "prisma migrate dev --name init --schema packages/db/prisma/schema.prisma"
+    "db:migrate": "prisma migrate dev --name init --schema packages/db/prisma/schema.prisma",
+    "verify:feed": "tsx scripts/verify-feed.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
