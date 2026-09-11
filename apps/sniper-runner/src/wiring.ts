@@ -18,6 +18,7 @@ import { AlertManager, MetricsStore, startHealthServer } from "@whale-sniper/mon
 import { buildOrchestrator, type SniperOrchestrator } from "@whale-sniper/orchestrator";
 import { TelegramBot } from "@whale-sniper/telegram-bot";
 import {
+  CompositeTokenMetadataProvider,
   DexScreenerTokenMetadataProvider,
   SolscanTokenMetadataProvider,
   type ITokenMetadataProvider,
@@ -74,7 +75,8 @@ function buildFeedProvider(env: AppEnv, scenarios: ScenarioResult[]): IFeedProvi
  * Single choke point for token-data provider selection - mirrors
  * `buildFeedProvider()`'s fail-fast pattern above. `TOKEN_DATA_PROVIDER=solscan`
  * is refused outright (never silently downgraded to mock/dexscreener) when
- * SOLSCAN_API_KEY is unset, so a misconfigured deploy fails loudly at boot
+ * SOLSCAN_API_KEY is unset, and `dexscreener+rpc` likewise when
+ * HELIUS_API_KEY is unset, so a misconfigured deploy fails loudly at boot
  * instead of quietly running against a different provider than intended.
  * Returns undefined for "mock" - buildOrchestrator() falls back to
  * MockTokenMetadataProvider (with the mock scenarios' deterministic
@@ -88,6 +90,14 @@ function buildTokenMetadataProvider(env: AppEnv): ITokenMetadataProvider | undef
       );
     }
     return new SolscanTokenMetadataProvider(env.SOLSCAN_API_KEY);
+  }
+  if (env.TOKEN_DATA_PROVIDER === "dexscreener+rpc") {
+    if (!env.HELIUS_API_KEY) {
+      throw new Error(
+        'TOKEN_DATA_PROVIDER=dexscreener+rpc requires HELIUS_API_KEY to be set - it reads holder concentration and mint/freeze authority state over Solana RPC, and refuses to start rather than silently falling back to the conservative "unknown = risky" defaults that impose a 35-point token-risk floor. Set HELIUS_API_KEY in .env, or set TOKEN_DATA_PROVIDER=mock, dexscreener or solscan.',
+      );
+    }
+    return new CompositeTokenMetadataProvider({ apiKey: env.HELIUS_API_KEY });
   }
   if (env.TOKEN_DATA_PROVIDER === "dexscreener") {
     return new DexScreenerTokenMetadataProvider();

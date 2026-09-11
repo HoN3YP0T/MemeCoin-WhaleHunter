@@ -7,7 +7,15 @@ const envSchema = z.object({
   // FEED_PROVIDER=helius when this is unset rather than silently falling
   // back to the mock feed.
   HELIUS_API_KEY: z.string().optional().default(""),
-  TOKEN_DATA_PROVIDER: z.enum(["mock", "dexscreener", "solscan"]).default("mock"),
+  // "dexscreener+rpc" is the recommended real-data option: it merges
+  // DexScreener's liquidity/market cap with holder concentration and
+  // mint/freeze authority state read from standard Solana RPC (via the
+  // operator's existing HELIUS_API_KEY), which is what removes the
+  // 35-point token-risk floor a DexScreener-only setup is stuck with. It
+  // reads HELIUS_API_KEY, not a new key of its own - see
+  // solanaRpcTokenMetadataProvider.ts, and wiring.ts's
+  // buildTokenMetadataProvider() for the fail-fast check.
+  TOKEN_DATA_PROVIDER: z.enum(["mock", "dexscreener", "dexscreener+rpc", "solscan"]).default("mock"),
   // Empty by default - no real key exists yet. wiring.ts's
   // buildTokenMetadataProvider() refuses to select TOKEN_DATA_PROVIDER=solscan
   // when this is unset rather than silently falling back to mock/dexscreener,

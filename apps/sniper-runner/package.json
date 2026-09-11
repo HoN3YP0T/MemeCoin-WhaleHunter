@@ -11,6 +11,7 @@
     "@whale-sniper/feed": "*",
     "@whale-sniper/monitoring": "*",
     "@whale-sniper/orchestrator": "*",
-    "@whale-sniper/telegram-bot": "*"
+    "@whale-sniper/telegram-bot": "*",
+    "@whale-sniper/token-intel": "*"
   }
 }
