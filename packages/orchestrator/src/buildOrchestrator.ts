@@ -95,6 +95,7 @@ export function buildOrchestrator(options: BuildOrchestratorOptions): BuiltOrche
     watchlistRepo: repos.watchlist,
     walletStatsSource: walletStatsUpdater,
     clusterSource: clusterDetector,
+    relationshipSource,
   });
 
   const metrics = new MetricsStore();

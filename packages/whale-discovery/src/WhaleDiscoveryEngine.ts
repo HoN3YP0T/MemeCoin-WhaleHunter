@@ -17,6 +17,13 @@ export interface ClusterSource {
   detectForToken(tokenMint: string): Promise<WalletCluster[]>;
 }
 
+/** Narrow seam over `WalletRelationshipSource` - only the one method this
+ * engine needs. A real `MockWalletRelationshipSource` or
+ * `SolanaRpcWalletRelationshipSource` satisfies it structurally. */
+export interface RelationshipWarmthSource {
+  relationshipDataKnown(tokenMint: string, wallet: string): boolean;
+}
+
 export interface WhaleDiscoveryEngineDeps {
   bus: EventBus;
   config: StrategyConfig;
@@ -24,6 +31,12 @@ export interface WhaleDiscoveryEngineDeps {
   watchlistRepo: IWatchlistRepository;
   walletStatsSource: WalletStatsSource;
   clusterSource: ClusterSource;
+  /** Optional: when supplied, auto-promotion is deferred for a wallet whose
+   * funder/deployer relationships have not been resolved yet (see
+   * `handle()`). Omitted means "relationship data is ground truth", which
+   * is exactly right for `MockWalletRelationshipSource` and keeps the
+   * default wiring's behaviour unchanged. */
+  relationshipSource?: RelationshipWarmthSource;
 }
 
 const CLUSTER_REJECT_REASON = "cluster flagged: creatorAssociatedWallets or coordinatedBuying";
@@ -38,7 +51,9 @@ const CLUSTER_REJECT_REASON = "cluster flagged: creatorAssociatedWallets or coor
  * UNCHANGED. A wallet that clears the gate is then checked against
  * `ClusterDetector`'s manipulation flags for the token that triggered this
  * evaluation; a wallet in a cluster flagged `creatorAssociatedWallets` or
- * `coordinatedBuying` is auto-rejected regardless of its score.
+ * `coordinatedBuying` is auto-rejected regardless of its score. A candidate
+ * whose relationship data has not been resolved yet is DEFERRED rather than
+ * promoted - see the fail-closed comment in `handle()`.
  *
  * Off by default (`config.walletDiscovery.enabled === false`) - `start()`
  * is a no-op subscriber in that case, so nothing about the existing
@@ -72,6 +87,20 @@ export class WhaleDiscoveryEngine {
 
     const score = scoreWallet(stats, this.deps.config);
     if (!score.passedHardGate) return; // hasn't cleared the bar yet - stays unstatused, re-evaluated on its next trade
+
+    // FAIL CLOSED ON UNKNOWN. The cluster flags below are derived from
+    // relationship data that a network-backed source serves from cache and
+    // warms in the background, so the first trades from an unseen wallet
+    // arrive before its funder/deployer lookups land. To the edge detectors
+    // "not yet checked" and "clean" are the same thing (no data -> no edge,
+    // so at worst a cluster is missed). Here they must not be: promoting a
+    // wallet onto the tradeable watchlist because "no manipulation was
+    // found" when nothing had been looked up yet is exactly the wash-trade
+    // trap this check exists to prevent. So the candidate is left
+    // unstatused and re-evaluated on its next trade, by which time the
+    // lookups this very call scheduled have usually landed. Deferring is
+    // free: the wallet is not tradeable while unstatused either way.
+    if (this.deps.relationshipSource && !this.deps.relationshipSource.relationshipDataKnown(tokenMint, wallet)) return;
 
     const clusters = await this.deps.clusterSource.detectForToken(tokenMint);
     const cluster = clusters.find((c) => c.members.includes(wallet));

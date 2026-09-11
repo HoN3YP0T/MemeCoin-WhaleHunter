@@ -3,7 +3,12 @@ import { EventBus, parseStrategyConfig, type StrategyConfig, type WalletCluster,
 import { InMemoryWatchlistRepository } from "@whale-sniper/db";
 import { WatchlistIndex } from "@whale-sniper/wallet-intel";
 import { describe, expect, it } from "vitest";
-import { WhaleDiscoveryEngine, type ClusterSource, type WalletStatsSource } from "./WhaleDiscoveryEngine.js";
+import {
+  WhaleDiscoveryEngine,
+  type ClusterSource,
+  type RelationshipWarmthSource,
+  type WalletStatsSource,
+} from "./WhaleDiscoveryEngine.js";
 
 const baseConfig = parseStrategyConfig(JSON.parse(readFileSync(new URL("../../../config/strategy.json", import.meta.url), "utf-8")));
 
@@ -84,6 +89,7 @@ function buildEngine(opts: {
   clusterSource: ClusterSource;
   watchlistIndex?: WatchlistIndex;
   watchlistRepo?: InMemoryWatchlistRepository;
+  relationshipSource?: RelationshipWarmthSource;
 }) {
   const bus = new EventBus();
   const watchlistIndex = opts.watchlistIndex ?? new WatchlistIndex();
@@ -95,6 +101,7 @@ function buildEngine(opts: {
     watchlistRepo,
     walletStatsSource: opts.walletStatsSource,
     clusterSource: opts.clusterSource,
+    relationshipSource: opts.relationshipSource,
   });
   return { bus, watchlistIndex, watchlistRepo, engine };
 }
@@ -235,6 +242,56 @@ describe("WhaleDiscoveryEngine", () => {
     // event fired for a wallet that was never a fresh candidate.
     expect(watchlistIndex.statusOf("AlreadyActive")).toBe("active");
     expect(promoted).toHaveLength(0);
+  });
+
+  it("does not auto-promote on unknown relationship data (un-warmed cache), and promotes once it warms", async () => {
+    // An RPC-backed relationship source answers "not yet checked" until its
+    // background funder/deployer lookups land. That must not read as
+    // "checked, clean" - see the fail-closed comment in handle().
+    let warm = false;
+    const relationshipSource: RelationshipWarmthSource = { relationshipDataKnown: () => warm };
+    const { bus, engine, watchlistIndex, watchlistRepo } = buildEngine({
+      config: discoveryConfig({ autoPromote: true }),
+      walletStatsSource: statsSource(strongWalletStats()),
+      clusterSource: noClusters(), // no cluster found - indistinguishable from "not looked up yet"
+      relationshipSource,
+    });
+    const promoted: unknown[] = [];
+    bus.on("wallet.discovery-promoted", (e) => promoted.push(e));
+
+    engine.start();
+    bus.emit("wallet.stats-updated", { wallet: "W", tokenMint: "T" });
+    await flush();
+
+    // Deferred, not promoted and not rejected: still unstatused, so still
+    // not tradeable, and still a candidate on its next trade.
+    expect(watchlistIndex.statusOf("W")).toBeUndefined();
+    expect(watchlistIndex.isWatched("W")).toBe(false);
+    expect(promoted).toHaveLength(0);
+    expect(await watchlistRepo.load()).toHaveLength(0);
+
+    // Same wallet, next trade, cache now warm - the deferral is a delay,
+    // not a permanent disqualification.
+    warm = true;
+    bus.emit("wallet.stats-updated", { wallet: "W", tokenMint: "T" });
+    await flush();
+
+    expect(watchlistIndex.statusOf("W")).toBe("active");
+    expect(promoted).toHaveLength(1);
+  });
+
+  it("still auto-rejects on a flagged cluster even when relationship data is warm", async () => {
+    const { bus, engine, watchlistIndex } = buildEngine({
+      config: discoveryConfig({ autoPromote: true }),
+      walletStatsSource: statsSource(strongWalletStats()),
+      clusterSource: clusterWith({ creatorAssociatedWallets: true }, ["W"]),
+      relationshipSource: { relationshipDataKnown: () => true },
+    });
+    engine.start();
+    bus.emit("wallet.stats-updated", { wallet: "W", tokenMint: "T" });
+    await flush();
+
+    expect(watchlistIndex.statusOf("W")).toBe("rejected");
   });
 
   it("returns undefined for a wallet with no stats yet, without throwing", async () => {
