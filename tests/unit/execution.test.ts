@@ -13,6 +13,7 @@ function env(overrides: Partial<Record<string, any>> = {}) {
     HELIUS_API_KEY: "",
     TOKEN_DATA_PROVIDER: "mock" as const,
     SOLSCAN_API_KEY: "",
+    WALLET_RELATIONSHIP_SOURCE: "mock" as const,
     TELEGRAM_BOT_TOKEN: "",
     TELEGRAM_CHAT_ID: "",
     LIVE_TRADING_ENABLED: false,

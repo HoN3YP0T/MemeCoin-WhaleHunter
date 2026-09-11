@@ -11,6 +11,7 @@ async function main(): Promise<void> {
       envFile: envFileLoaded ? "loaded .env" : "no .env found - using defaults",
       feedProvider: ctx.env.FEED_PROVIDER,
       tokenDataProvider: ctx.env.TOKEN_DATA_PROVIDER,
+      walletRelationshipSource: ctx.env.WALLET_RELATIONSHIP_SOURCE,
       liveTradingEnabled: ctx.env.LIVE_TRADING_ENABLED,
       healthPort: ctx.env.HEALTH_PORT,
     },

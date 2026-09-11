@@ -31,6 +31,13 @@ export interface BuildOrchestratorOptions {
    * When set, `tokenMetadataOverrides` is ignored (it only makes sense for
    * the mock's deterministic per-mint seeding). */
   tokenMetadataProvider?: ITokenMetadataProvider;
+  /** Overrides the default MockWalletRelationshipSource - e.g. a
+   * SolanaRpcWalletRelationshipSource when
+   * WALLET_RELATIONSHIP_SOURCE=solana-rpc. The mock's funder/creator maps
+   * are only ever populated by scenario setup, so on the default path
+   * cluster-detect's common-funder (weight .9) and shared-creator
+   * (weight 1.0) edge detectors contribute nothing. */
+  relationshipSource?: WalletRelationshipSource;
 }
 
 export interface BuiltOrchestrator {
@@ -78,7 +85,7 @@ export function buildOrchestrator(options: BuildOrchestratorOptions): BuiltOrche
   const creatorRegistry = new CreatorRegistry();
   const creatorRegistryUpdater = new CreatorRegistryUpdater(bus, repos.token, creatorRegistry, ruggedRegistry, repos.creatorReputation);
 
-  const relationshipSource = new MockWalletRelationshipSource();
+  const relationshipSource = options.relationshipSource ?? new MockWalletRelationshipSource();
   const clusterDetector = new ClusterDetector(bus, repos.cluster, repos.token, relationshipSource, ruggedRegistry, config);
 
   const riskEngine = new RiskEngine(repos.riskState, runtimeFlags);

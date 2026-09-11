@@ -21,6 +21,15 @@ const envSchema = z.object({
   // when this is unset rather than silently falling back to mock/dexscreener,
   // mirroring HELIUS_API_KEY's fail-fast contract above.
   SOLSCAN_API_KEY: z.string().optional().default(""),
+  // "mock" (default) keeps MockWalletRelationshipSource, whose
+  // funder/creator maps are only ever populated by scenario setup - so
+  // cluster-detect's common-funder and shared-creator edge detectors
+  // contribute nothing in production. "solana-rpc" derives both from
+  // on-chain history over the operator's existing HELIUS_API_KEY (no
+  // second credential); wiring.ts's buildWalletRelationshipSource()
+  // refuses to select it without one, mirroring the fail-fast contract
+  // above. See solanaRpcWalletRelationshipSource.ts.
+  WALLET_RELATIONSHIP_SOURCE: z.enum(["mock", "solana-rpc"]).default("mock"),
   TELEGRAM_BOT_TOKEN: z.string().optional().default(""),
   TELEGRAM_CHAT_ID: z.string().optional().default(""),
   LIVE_TRADING_ENABLED: z

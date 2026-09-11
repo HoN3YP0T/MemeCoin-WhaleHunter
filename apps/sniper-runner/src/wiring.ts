@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
   EventBus,
   RealClock,
+  RpcRefreshGovernor,
   RuntimeFlags,
   createLogger,
   loadEnv,
@@ -11,6 +12,10 @@ import {
   type Logger,
   type StrategyConfig,
 } from "@whale-sniper/core";
+import {
+  SolanaRpcWalletRelationshipSource,
+  type WalletRelationshipSource,
+} from "@whale-sniper/cluster-detect";
 import { RecentEventLog, handleDashboardRequest } from "@whale-sniper/dashboard";
 import { createRepositories, type Repositories, type WatchlistEntry } from "@whale-sniper/db";
 import { FeedManager, HeliusFeedProvider, MockFeedProvider, allScenarios, type ScenarioResult } from "@whale-sniper/feed";
@@ -82,7 +87,7 @@ function buildFeedProvider(env: AppEnv, scenarios: ScenarioResult[]): IFeedProvi
  * MockTokenMetadataProvider (with the mock scenarios' deterministic
  * overrides) in that case, exactly as it always has.
  */
-function buildTokenMetadataProvider(env: AppEnv): ITokenMetadataProvider | undefined {
+function buildTokenMetadataProvider(env: AppEnv, governor: RpcRefreshGovernor): ITokenMetadataProvider | undefined {
   if (env.TOKEN_DATA_PROVIDER === "solscan") {
     if (!env.SOLSCAN_API_KEY) {
       throw new Error(
@@ -97,10 +102,36 @@ function buildTokenMetadataProvider(env: AppEnv): ITokenMetadataProvider | undef
         'TOKEN_DATA_PROVIDER=dexscreener+rpc requires HELIUS_API_KEY to be set - it reads holder concentration and mint/freeze authority state over Solana RPC, and refuses to start rather than silently falling back to the conservative "unknown = risky" defaults that impose a 35-point token-risk floor. Set HELIUS_API_KEY in .env, or set TOKEN_DATA_PROVIDER=mock, dexscreener or solscan.',
       );
     }
-    return new CompositeTokenMetadataProvider({ apiKey: env.HELIUS_API_KEY });
+    return new CompositeTokenMetadataProvider({ apiKey: env.HELIUS_API_KEY, refreshGovernor: governor });
   }
   if (env.TOKEN_DATA_PROVIDER === "dexscreener") {
     return new DexScreenerTokenMetadataProvider();
+  }
+  return undefined;
+}
+
+/**
+ * Single choke point for wallet-relationship-source selection - same
+ * fail-fast pattern as the two above. This is the difference between
+ * cluster detection running on two of its four edge detectors and on all
+ * four: `MockWalletRelationshipSource`'s funder/creator maps are only ever
+ * populated by scenario setup, so in production `commonFunderEdges`
+ * (weight .9) and `sharedCreatorEdges` (weight 1.0) - the two decisive
+ * signals against the 0.5 merge threshold - return nothing, and the
+ * `creatorAssociatedWallets` flag (which whale-discovery uses to
+ * auto-reject wash-trading candidates) can never fire.
+ *
+ * Returns undefined for "mock" so buildOrchestrator() falls back to the
+ * mock exactly as it always has.
+ */
+function buildWalletRelationshipSource(env: AppEnv, governor: RpcRefreshGovernor): WalletRelationshipSource | undefined {
+  if (env.WALLET_RELATIONSHIP_SOURCE === "solana-rpc") {
+    if (!env.HELIUS_API_KEY) {
+      throw new Error(
+        'WALLET_RELATIONSHIP_SOURCE=solana-rpc requires HELIUS_API_KEY to be set - it derives wallet funding and token-deployer relationships from on-chain history, and refuses to start rather than silently falling back to MockWalletRelationshipSource, whose common-funder and shared-creator edge detectors return nothing in production. Set HELIUS_API_KEY in .env, or set WALLET_RELATIONSHIP_SOURCE=mock.',
+      );
+    }
+    return new SolanaRpcWalletRelationshipSource({ apiKey: env.HELIUS_API_KEY, refreshGovernor: governor });
   }
   return undefined;
 }
@@ -127,7 +158,13 @@ export async function buildAppContext(): Promise<AppContext> {
 
   const scenarios = allScenarios();
   const tokenMetadataOverrides = scenarios.map((s) => ({ tokenMint: s.tokenMint, metadata: s.tokenMetadata }));
-  const tokenMetadataProvider = buildTokenMetadataProvider(env);
+  // One governor shared by every Helius-backed provider: token metadata and
+  // wallet relationships hit the same endpoint on the same HELIUS_API_KEY,
+  // so the operator's rate limit has to be spent once between them rather
+  // than twice over.
+  const rpcRefreshGovernor = new RpcRefreshGovernor();
+  const tokenMetadataProvider = buildTokenMetadataProvider(env, rpcRefreshGovernor);
+  const relationshipSource = buildWalletRelationshipSource(env, rpcRefreshGovernor);
 
   const built = buildOrchestrator({
     bus,
@@ -138,6 +175,7 @@ export async function buildAppContext(): Promise<AppContext> {
     watchlist,
     tokenMetadataOverrides,
     tokenMetadataProvider,
+    relationshipSource,
   });
 
   // Hydrate creator reputation from persistence before the orchestrator (and

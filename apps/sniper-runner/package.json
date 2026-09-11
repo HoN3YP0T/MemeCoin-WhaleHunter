@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/main.ts",
   "dependencies": {
+    "@whale-sniper/cluster-detect": "*",
     "@whale-sniper/core": "*",
     "@whale-sniper/dashboard": "*",
     "@whale-sniper/db": "*",

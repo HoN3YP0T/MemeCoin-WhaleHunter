@@ -51,7 +51,9 @@ packages/
                    DexScreener / DexScreener+Solana-RPC composite / Solscan
                    adapters, opt-in), tokenRiskScoring.ts,
                    CreatorRegistryUpdater
-  cluster-detect  wallet relationship graph, union-find clustering, flags
+  cluster-detect  wallet relationship graph, union-find clustering, flags,
+                   WalletRelationshipSource (mock, or real Solana-RPC
+                   funder/deployer derivation, opt-in)
   signal-engine   composite signal score, entryGate.ts
   paper-trading   fill simulator, paper trade engine
   execution       IExecutionAdapter, paper + live adapters, risk engine,
@@ -121,7 +123,10 @@ per-stage latencies that `monitoring` aggregates.
 - **Cluster/manipulation**: a weighted-edge wallet relationship graph
   (common funder, direct transfer, repeated co-buy, timing correlation,
   shared creator) merged via union-find, producing five manipulation flags
-  and a capped penalty fed into the signal score.
+  and a capped penalty fed into the signal score. The common-funder and
+  shared-creator edges need on-chain funding/deployer history, which only
+  `WALLET_RELATIONSHIP_SOURCE=solana-rpc` supplies - see "On-chain wallet
+  relationships" under "Real integrations".
 - **Composite Signal Score** (0-100): `0.30*whaleQuality + 0.20*tokenQuality
   + 0.15*liquidity + 0.10*buyingMomentum + 0.10*independentBuyers +
   0.10*earlyEntryQuality - 0.05*manipulationPenalty`.
@@ -148,7 +153,7 @@ into an already-mature pump.
 
 ## Real integrations
 
-All four of these are fully implemented, not stubs, and all four are off
+All five of these are fully implemented, not stubs, and all five are off
 by default - nothing about the mock-feed/mock-token-stats path above
 changes unless you explicitly opt in. If you want real token data, the
 recommended option is `dexscreener+rpc` (below); `dexscreener` alone is
@@ -254,6 +259,83 @@ fields, an unknown `creatorTokenLaunchCount` (Solscan outage, or a provider
 that doesn't support it) deliberately defaults to *neutral* (0 risk
 contribution), not risky - a brand-new first-time creator is normal, and
 missing data shouldn't punish every token equally.
+
+**On-chain wallet relationships / manipulation detection**
+(`WALLET_RELATIONSHIP_SOURCE=solana-rpc` in `.env`, plus `HELIUS_API_KEY` -
+the same key again, no second credential and no paid API) -
+`SolanaRpcWalletRelationshipSource`
+(`packages/cluster-detect/src/solanaRpcWalletRelationshipSource.ts`).
+
+*What this fixes.* `ClusterDetector` combines four edge detectors, and
+until this existed **two of the four were dead code in production - the two
+highest-weighted ones**. `timingCorrelationEdges` and `repeatedCoBuyEdges`
+are derived from the trade stream and always worked; `commonFunderEdges`
+(weight 0.9) and `sharedCreatorEdges` (weight 1.0) came from
+`MockWalletRelationshipSource`, whose `setFunder()`/`setCreator()` are only
+ever called by scenario setup - never by wiring - so both returned `[]` on
+every call. Against `clusterThresholds.edgeMergeThreshold` of 0.5 those two
+are the decisive signals: either one alone forces a merge, where timing and
+co-buy weights may or may not clear the bar. Two consequences followed:
+the `creatorAssociatedWallets` cluster flag could never fire, and
+`whale-discovery`'s `WhaleDiscoveryEngine` - which uses that exact flag to
+auto-reject wash-trading candidates before promoting a wallet onto the
+watchlist - had an inert safety check. The bot could see "these wallets buy
+the same things at the same time" but was blind to "these wallets are the
+same person".
+
+| relationship | how it is derived |
+|---|---|
+| a wallet's original funder | paginate `getSignaturesForAddress(wallet)` back to the earliest signature, fetch that transaction, and take the account with the largest lamport decrease (the wallet's own balance having increased). Two wallets sharing one -> `common-funder` edge, weight 0.9 |
+| a token's deployer | paginate `getSignaturesForAddress(mint)` back to the mint's creation transaction and take its fee payer / first signer (`accountKeys[0]`) |
+| creator-associated wallets | a wallet that *is* the deployer, or whose funder is the deployer - reusing the same funder cache, so it costs no extra calls. Feeds `shared-creator` edges (weight 1.0) and the `creatorAssociatedWallets` flag |
+
+*Cached permanently, with no TTL.* This is the one large efficiency win it
+has over `dexscreener+rpc`'s 20s TTL: a wallet's original funder and a
+token's deployer are **immutable** - properties of a transaction that
+already happened, which no later activity can supersede. Holder
+concentration changes minute to minute; "who first sent this address SOL"
+does not. So one successful lookup per address is the entire process
+lifetime cost. Only *failed* lookups are retried, under the shared refresh
+governor's per-key cooldown.
+
+*RPC cost and the pagination cap.* `getSignaturesForAddress` only walks
+backwards, so reaching an address's earliest signature costs one call per
+1000 signatures of its whole lifetime - unbounded for an old, busy wallet.
+Pagination is therefore capped at 4 pages, so one lookup is 2 RPC calls in
+the common case (one short page + one `getParsedTransaction`) and at most 5.
+Past the cap the result is recorded as **unknown**, never guessed from the
+oldest signature seen so far - that signature is some mid-life trade, and
+the "funder" read off it would be a trading counterparty, i.e. a fabricated
+relationship merging two unrelated wallets at weight 0.9. The same
+`RpcRefreshGovernor` (lifted to `packages/core` and re-exported from
+`token-intel`, not copied) governs this and `dexscreener+rpc` together, and
+`wiring.ts` passes **one instance** to both, so the operator's single Helius
+rate limit is spent once rather than twice.
+
+*Fail-closed on unknown.* Reads are synchronous and never block: they answer
+from cache and schedule a throttled background lookup on a miss, so the
+first trades from an unseen wallet arrive while its relationships are still
+"unknown" rather than "absent". The two cases are treated differently on
+purpose. For cluster edges, unknown means no edge - the same as today, and
+acceptable, since it only risks missing a cluster while the timing/co-buy
+detectors still apply. For `WhaleDiscoveryEngine` auto-promotion it must
+not: promoting a wallet because "no manipulation was found" when nothing had
+been looked up yet is exactly the wash-trade trap the check exists to
+prevent. So the engine now consults `relationshipDataKnown()` and **defers**
+- the candidate stays unstatused (and therefore untradeable) and is
+re-evaluated on its next trade, by which time the lookups that call
+scheduled have usually landed. `MockWalletRelationshipSource` answers
+`relationshipDataKnown()` with `true`, because it *is* ground truth for the
+fixtures registered into it, which keeps the default path byte-identical.
+
+**Honesty note**: this build cannot reach Helius (the sandbox blocks it
+outright), so all of the above is verified against injected
+`SolanaHistoryRpcLike` fakes only. The risky assumptions are about the
+*shape* of real responses - that `accountKeys[0]` is the fee payer, and that
+lamport deltas (`meta.preBalances`/`postBalances`, used deliberately in
+place of matching `jsonParsed` instruction shapes) identify the funder - see
+the HONESTY NOTE at the top of `solanaRpcWalletRelationshipSource.ts` for
+what specifically to re-check with a real key.
 
 **Helius live feed** (`FEED_PROVIDER=helius` in `.env`, plus
 `HELIUS_API_KEY`) - `HeliusFeedProvider` (`packages/feed`) subscribes to
