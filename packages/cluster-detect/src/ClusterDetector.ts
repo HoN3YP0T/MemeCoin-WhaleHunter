@@ -3,7 +3,7 @@ import type { IClusterRepository, ITokenRepository } from "@whale-sniper/db";
 import { buildClusters } from "./clusterGraph.js";
 import { repeatedCoBuyEdges, timingCorrelationEdges } from "./edgeDetectors.js";
 import { evaluateClusterFlags } from "./flagEvaluator.js";
-import { MockWalletRelationshipSource } from "./mockRelationshipSource.js";
+import type { WalletRelationshipSource } from "./walletRelationshipSource.js";
 
 /** Buffers trades per token from the live stream and, on demand (called at
  * the signal engine's cluster-check stage), builds the wallet relationship
@@ -16,7 +16,7 @@ export class ClusterDetector {
     private readonly bus: EventBus,
     private readonly clusterRepo: IClusterRepository,
     private readonly tokenRepo: ITokenRepository,
-    private readonly relationshipSource: MockWalletRelationshipSource,
+    private readonly relationshipSource: WalletRelationshipSource,
     private readonly ruggedRegistry: RuggedTokenRegistry,
     private readonly config: StrategyConfig,
   ) {}

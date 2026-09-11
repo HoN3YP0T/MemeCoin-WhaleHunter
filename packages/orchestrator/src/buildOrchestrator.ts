@@ -1,6 +1,6 @@
 import type { Clock, EventBus, RuntimeFlags, StrategyConfig } from "@whale-sniper/core";
 import { CreatorRegistry, RuggedTokenRegistry, TokenFirstSeenIndex } from "@whale-sniper/core";
-import { ClusterDetector, MockWalletRelationshipSource } from "@whale-sniper/cluster-detect";
+import { ClusterDetector, MockWalletRelationshipSource, type WalletRelationshipSource } from "@whale-sniper/cluster-detect";
 import type { Repositories, WatchlistEntry } from "@whale-sniper/db";
 import { ExecutionPipeline, PaperExecutionAdapter, RiskEngine, type IExecutionAdapter } from "@whale-sniper/execution";
 import { MetricsStore } from "@whale-sniper/monitoring";
@@ -37,7 +37,7 @@ export interface BuiltOrchestrator {
   orchestrator: SniperOrchestrator;
   metrics: MetricsStore;
   tokenMetadataProvider: ITokenMetadataProvider;
-  relationshipSource: MockWalletRelationshipSource;
+  relationshipSource: WalletRelationshipSource;
   riskEngine: RiskEngine;
   /** Exposed so the composition root (wiring.ts) can hydrate it from
    * `repos.creatorReputation` at boot, before `orchestrator.start()` is

@@ -1,4 +1,5 @@
 import { Connection, PublicKey } from "@solana/web3.js";
+import { RpcRefreshGovernor, resolveRpcRefreshBudget, type RpcRefreshBudget } from "@whale-sniper/core";
 import { DexScreenerTokenMetadataProvider } from "./dexScreenerTokenMetadataProvider.js";
 import { conservativeUnknownSeed, type ITokenMetadataProvider, type TokenMetadataSeed } from "./tokenMetadataProvider.js";
 
@@ -73,42 +74,21 @@ const TOP_N_HOLDERS = 10;
 const DEFAULT_CACHE_TTL_MS = 20_000;
 
 /**
- * Rate-limit governor for background refreshes.
+ * Rate-limit governor for background refreshes - lifted to
+ * `@whale-sniper/core` and re-exported here, because `cluster-detect`'s
+ * `SolanaRpcWalletRelationshipSource` hits the same Helius endpoint on the
+ * same key and must spend the same quota rather than a second one of its
+ * own. See `RpcRefreshGovernor` for the throttle's reasoning.
  *
- * One refresh = 3 RPC calls (mint account + largest accounts + supply), and
- * a busy pump.fun feed touches far more distinct mints than a 20s TTL alone
- * can absorb - every previously-unseen mint is a guaranteed cache miss. So
- * on top of the TTL and the per-mint in-flight de-dupe, refreshes are
- * governed globally:
- *
- * - `minIntervalMs` (250ms) spaces out refresh *starts* across all mints, so
- *   the steady-state ceiling is 4 refreshes/s = 12 RPC calls/s regardless of
- *   how many mints the feed throws at `get()`.
- * - `maxConcurrent` (4) bounds how many refreshes can be open at once, so a
- *   slow endpoint queues rather than fanning out unboundedly.
- * - `perMintRetryCooldownMs` (5s) stops a mint whose refresh *failed* from
- *   being retried on every single subsequent `get()` - without it a cold,
- *   failing mint re-triggers forever, since a failure deliberately leaves no
- *   cache entry behind.
- *
- * Dropping a refresh is always safe: `get()` is synchronous and returns
- * cached-or-conservative either way, so throttling only ever delays better
- * data, it never blocks a trade decision. Batching the three calls into one
+ * The numbers still matter here: one refresh = 3 RPC calls (mint account +
+ * largest accounts + supply), and a busy pump.fun feed touches far more
+ * distinct mints than a 20s TTL alone can absorb - every previously-unseen
+ * mint is a guaranteed cache miss. Batching the three calls into one
  * JSON-RPC batch request would cut round-trips but not credit consumption
  * (providers meter per method call), so it is deliberately not done here -
  * the throttle is the thing that protects the quota.
  */
-export interface RpcRefreshBudget {
-  minIntervalMs: number;
-  maxConcurrent: number;
-  perMintRetryCooldownMs: number;
-}
-
-export const DEFAULT_RPC_REFRESH_BUDGET: RpcRefreshBudget = {
-  minIntervalMs: 250,
-  maxConcurrent: 4,
-  perMintRetryCooldownMs: 5_000,
-};
+export { DEFAULT_RPC_REFRESH_BUDGET, type RpcRefreshBudget } from "@whale-sniper/core";
 
 /** The subset of `TokenMetadataSeed` that Solana RPC can actually answer.
  * Liquidity and market cap are absent by construction - pricing a pool
@@ -218,6 +198,11 @@ export interface CompositeTokenMetadataProviderOptions {
   dexScreener?: ITokenMetadataProvider;
   cacheTtlMs?: number;
   refreshBudget?: Partial<RpcRefreshBudget>;
+  /** Pass a governor shared with other Helius-backed providers (see
+   * `buildOrchestrator`) so one operator rate limit is spent once across
+   * all of them. Defaults to a private governor built from
+   * `refreshBudget`. */
+  refreshGovernor?: RpcRefreshGovernor;
   now?: () => number;
 }
 
@@ -262,13 +247,10 @@ export class CompositeTokenMetadataProvider implements ITokenMetadataProvider {
   private readonly rpc: SolanaRpcLike;
   private readonly dexScreener: ITokenMetadataProvider;
   private readonly cacheTtlMs: number;
-  private readonly budget: RpcRefreshBudget;
+  private readonly governor: RpcRefreshGovernor;
   private readonly now: () => number;
 
   private readonly cache = new Map<string, RpcCacheEntry>();
-  private readonly inFlight = new Map<string, Promise<void>>();
-  private readonly lastAttemptAt = new Map<string, number>();
-  private lastRefreshStartedAt = Number.NEGATIVE_INFINITY;
 
   constructor(options: CompositeTokenMetadataProviderOptions) {
     if (!options.apiKey) {
@@ -281,8 +263,9 @@ export class CompositeTokenMetadataProvider implements ITokenMetadataProvider {
     this.rpc = rpcFactory(`https://mainnet.helius-rpc.com/?api-key=${options.apiKey}`);
     this.dexScreener = options.dexScreener ?? new DexScreenerTokenMetadataProvider();
     this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
-    this.budget = { ...DEFAULT_RPC_REFRESH_BUDGET, ...options.refreshBudget };
     this.now = options.now ?? Date.now;
+    this.governor =
+      options.refreshGovernor ?? new RpcRefreshGovernor(resolveRpcRefreshBudget(options.refreshBudget), this.now);
   }
 
   get(tokenMint: string): TokenMetadataSeed {
@@ -325,23 +308,10 @@ export class CompositeTokenMetadataProvider implements ITokenMetadataProvider {
   }
 
   private triggerRefresh(tokenMint: string): void {
-    if (this.inFlight.has(tokenMint)) return;
-    const now = this.now();
     // The retry cooldown only guards mints with *no* cache entry - i.e. ones
     // whose refresh has never succeeded. A mint that has a (merely stale)
-    // entry is already rate-limited by the TTL, and applying the cooldown to
-    // it too would pin refreshes to whichever of the two is longer.
-    if (!this.cache.has(tokenMint)) {
-      const lastAttempt = this.lastAttemptAt.get(tokenMint);
-      if (lastAttempt !== undefined && now - lastAttempt < this.budget.perMintRetryCooldownMs) return;
-    }
-    if (this.inFlight.size >= this.budget.maxConcurrent) return;
-    if (now - this.lastRefreshStartedAt < this.budget.minIntervalMs) return;
-
-    this.lastRefreshStartedAt = now;
-    this.lastAttemptAt.set(tokenMint, now);
-    const p = this.refreshNow(tokenMint).finally(() => this.inFlight.delete(tokenMint));
-    this.inFlight.set(tokenMint, p);
+    // entry is already rate-limited by the TTL.
+    this.governor.tryStart(tokenMint, () => this.refreshNow(tokenMint), { skipRetryCooldown: this.cache.has(tokenMint) });
   }
 
   private async refreshNow(tokenMint: string): Promise<void> {

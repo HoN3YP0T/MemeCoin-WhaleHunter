@@ -1,4 +1,5 @@
 import type { ClusterEdge } from "@whale-sniper/core";
+import type { WalletRelationshipSource } from "./walletRelationshipSource.js";
 
 /**
  * Stands in for real on-chain funding-graph and token-creator lookups
@@ -7,7 +8,7 @@ import type { ClusterEdge } from "@whale-sniper/core";
  * history and token metadata; here relationships are explicitly registered
  * by scenario setup / wiring code.
  */
-export class MockWalletRelationshipSource {
+export class MockWalletRelationshipSource implements WalletRelationshipSource {
   private funders = new Map<string, string>(); // wallet -> funder wallet
   private creators = new Map<string, string>(); // tokenMint -> creator wallet
   private creatorLinked = new Map<string, Set<string>>(); // tokenMint -> wallets associated with the creator
@@ -19,6 +20,15 @@ export class MockWalletRelationshipSource {
   setCreator(tokenMint: string, creator: string, associatedWallets: string[] = []): void {
     this.creators.set(tokenMint, creator);
     this.creatorLinked.set(tokenMint, new Set([creator, ...associatedWallets]));
+  }
+
+  /** Always true: this source IS the ground truth for the scenarios that
+   * register into it, so an unregistered wallet is genuinely unrelated
+   * rather than un-looked-up. Keeps the mock path (and therefore every
+   * existing test and a zero-config `npm run start`) free of the warm-up
+   * deferral a network-backed source needs. */
+  relationshipDataKnown(_tokenMint: string, _wallet: string): boolean {
+    return true;
   }
 
   isCreatorAssociated(tokenMint: string, wallet: string): boolean {

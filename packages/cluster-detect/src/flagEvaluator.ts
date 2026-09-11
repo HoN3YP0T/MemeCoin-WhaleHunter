@@ -1,5 +1,5 @@
 import type { ClusterFlags, NormalizedTradeEvent, TokenStats, WalletCluster } from "@whale-sniper/core";
-import type { MockWalletRelationshipSource } from "./mockRelationshipSource.js";
+import type { WalletRelationshipSource } from "./walletRelationshipSource.js";
 
 const IMMEDIATE_SELL_WINDOW_SECONDS = 30;
 const IMMEDIATE_SELL_FRACTION = 0.5;
@@ -10,7 +10,9 @@ export interface FlagEvaluationInput {
   tokenMint: string;
   trades: NormalizedTradeEvent[]; // all trades observed for this token
   tokenStats: TokenStats | undefined;
-  relationshipSource: MockWalletRelationshipSource;
+  /** Only `isCreatorAssociated` is read here, so any object with that
+   * method satisfies it - including a full `WalletRelationshipSource`. */
+  relationshipSource: Pick<WalletRelationshipSource, "isCreatorAssociated">;
   tokenIsRugged: boolean;
   manipulationPenaltyCap: number;
 }
