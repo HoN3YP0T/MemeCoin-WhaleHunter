@@ -47,8 +47,9 @@ packages/
                    FeedManager
   wallet-intel    watchlist loader + state machine (WatchlistIndex),
                    walletStatsUpdater, walletScoring.ts
-  token-intel     token stats/metadata collector (mock, or real DexScreener
-                   /Solscan adapters, opt-in), tokenRiskScoring.ts,
+  token-intel     token stats/metadata collector (mock, or real
+                   DexScreener / DexScreener+Solana-RPC composite / Solscan
+                   adapters, opt-in), tokenRiskScoring.ts,
                    CreatorRegistryUpdater
   cluster-detect  wallet relationship graph, union-find clustering, flags
   signal-engine   composite signal score, entryGate.ts
@@ -147,9 +148,11 @@ into an already-mature pump.
 
 ## Real integrations
 
-All three of these are fully implemented, not stubs, and all three are off
+All four of these are fully implemented, not stubs, and all four are off
 by default - nothing about the mock-feed/mock-token-stats path above
-changes unless you explicitly opt in.
+changes unless you explicitly opt in. If you want real token data, the
+recommended option is `dexscreener+rpc` (below); `dexscreener` alone is
+documented mainly because it is what `dexscreener+rpc` is built out of.
 
 **DexScreener token data** (`TOKEN_DATA_PROVIDER=dexscreener` in `.env`) -
 `DexScreenerTokenMetadataProvider` (`packages/token-intel`) calls
@@ -159,9 +162,79 @@ on network I/O. DexScreener has no holder count, concentration, or
 mint/freeze authority data, so those fields fall back to conservative
 "treat as risky" defaults (authorities read as *not revoked*) rather than
 a guess - see the comment on `conservativeUnknownSeed` in
-`tokenMetadataProvider.ts` (shared by DexScreener's and Solscan's adapters,
-so the fallback never drifts between them). No env var is required beyond
-the flag itself; DexScreener needs no key.
+`tokenMetadataProvider.ts` (shared by DexScreener's, the
+composite's and Solscan's adapters, so the fallback never drifts between
+them). No env var is required beyond the flag itself; DexScreener needs no
+key. Those conservative fallbacks are what impose the 35-point risk floor
+described under `dexscreener+rpc` below, which is why that option, not
+this one, is the recommended way to run on real data.
+
+**DexScreener + Solana RPC token data, recommended**
+(`TOKEN_DATA_PROVIDER=dexscreener+rpc` in `.env`, plus `HELIUS_API_KEY` -
+the same key the live feed uses, no second credential and no paid API) -
+`CompositeTokenMetadataProvider`
+(`packages/token-intel/src/solanaRpcTokenMetadataProvider.ts`) merges two
+sources field-by-field, because neither one alone can answer all six
+fields `TokenStats` needs:
+
+| field | source |
+|---|---|
+| `liquidityUsd`, `marketCapUsd` | DexScreener (the existing `DexScreenerTokenMetadataProvider`, reused wholesale) |
+| `holderCount`, `top10HolderPct` | Solana RPC `getTokenLargestAccounts` + `getTokenSupply` |
+| `mintAuthorityRevoked`, `freezeAuthorityRevoked` | Solana RPC `getParsedAccountInfo` on the mint (`mintAuthority`/`freezeAuthority` null = revoked) |
+| `creatorAddress`, `creatorTokenLaunchCount` | left `undefined` - standard RPC can't cheaply attribute a deployer, and `creatorRiskComponent` treats unknown creator data as *neutral* by design |
+
+*The 35-point risk floor this exists to remove.* DexScreener is the only
+free real provider, and it has no holder, concentration or authority data
+at all, so `conservativeUnknownSeed()` has to assume worst case:
+`top10HolderPct: 1` and both authorities *not revoked*. That maxes out
+`concentrationRisk` (weight .20) **and** `authorityRisk` (weight .15), a
+flat 35-point floor on every single token's risk score before age,
+liquidity, buyer diversity or flow contribute anything. The entry gate
+rejects anything above `maxTokenRiskScore: 55`, so realistic pump.fun
+tokens are rejected on missing data rather than on their actual risk:
+
+| token profile | DexScreener only | with real holder/authority data |
+|---|---|---|
+| 1h old, $10k liquidity, 15 buyers | 82.0 rejected | 53.0 passes |
+| 6h old, $50k liquidity, 30 buyers | 66.3 rejected | 37.3 passes |
+| 6h old, $99k liquidity, 50 buyers | 56.5 rejected | 27.5 passes |
+
+(Both columns are the same token, same weights; the only difference is
+whether the four RPC-sourced fields are measured or assumed. "Real data"
+here means authorities renounced and the top 10 holders at 30%, which is
+unremarkable for a surviving launch. The floor and these before/after
+numbers are pinned as tests in `tests/unit/tokenRiskScoring.test.ts` so a
+future weight change can't silently reintroduce the problem.) Paying for
+Solscan would also fix this, but its one unique contribution - creator
+history - feeds `creatorRisk`, which ships at weight 0, so today it buys
+nothing this doesn't.
+
+*Why composite and not an RPC-only provider.* Solana RPC has no concept of
+pool pricing, so an RPC-only provider would report `liquidityUsd: 0` -
+which maxes out `liquidityRiskComponent` (weight .20) *and* fails
+`tokenThresholds.minLiquidityUsd` (4000) in `entryGate.ts` outright. That
+would trade the 35-point floor for a hard rejection, which is worse.
+
+The two sources degrade strictly independently, because they are two
+separate caches: if RPC is down, DexScreener's liquidity/market cap is
+still served and only the four RPC-sourced fields fall back to
+`conservativeUnknownSeed()`; if DexScreener is down, real holder and
+authority data is still served. Like the other adapters, `get()` is
+synchronous and never blocks on I/O - it returns cached-or-conservative
+immediately and schedules a background refresh. One refresh costs 3 RPC
+calls, so on top of the 20s per-mint TTL and the in-flight de-dupe there
+is a global throttle: a 250ms minimum gap between refresh *starts* (a 4
+refresh/s, 12 call/s steady-state ceiling no matter how many mints the
+feed throws at it), at most 4 concurrent refreshes, and a 5s per-mint
+cooldown so a mint whose refresh keeps failing isn't retried on every
+`get()`. Dropping a refresh is always safe - it delays better data, it
+never blocks a trade decision. **Honesty note**: this build cannot reach
+Helius (the sandbox blocks it outright), so every behaviour above is
+verified against injected `SolanaRpcLike` fakes only, never a live
+response - see the HONESTY NOTE at the top of
+`solanaRpcTokenMetadataProvider.ts` for what specifically to re-check with
+a real key.
 
 **Solscan token data** (`TOKEN_DATA_PROVIDER=solscan` in `.env`, plus
 `SOLSCAN_API_KEY`) - `SolscanTokenMetadataProvider` (`packages/token-intel`)
