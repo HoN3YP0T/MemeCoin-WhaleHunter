@@ -1,4 +1,4 @@
-# MemeCoin WhaleHunter
+# Whalescout
 
 A Solana memecoin "whale-entry sniper" trading engine scaffold: detects
 high-quality whale buys, scores the whale and the token, filters out
